@@ -100,9 +100,16 @@ Refer to `openspec/project.md` for full details. Violating these is a critical f
 
 ## 🟣 Engineering Standards & Best Practices
 
-- **Test-Driven**: No code is written without a failing test first. Implementation without verification is forbidden.
+- **Test-Driven (TDD)**: No code is written without a failing test first. Implementation without verification is forbidden.
+- **Edge-Case Obsession (CRITICAL)**:
+    - You must assume inputs are malicious, broken, or missing.
+    - **Mandatory Test Scenarios**: For every function/API, you MUST implement tests for:
+        1.  **Boundary Values**: Empty lists, zero/negative numbers, max-length strings.
+        2.  **Malformed Data**: Invalid JSON, partial headers, corrupted images.
+        3.  **Resource Failures**: Simulated Network Timeouts (mocked), DB disconnection, 429 Rate Limits.
+    - *Constraint*: Do not just test the "Happy Path". If a test suite only covers success cases, it is considered **INCOMPLETE**.
 - **Simplicity**: Default to simple solutions. Avoid over-engineering unless the spec explicitly requires it.
-- **Documentation**: All new modules must have docstrings.
+- **Documentation**: All new modules must have docstrings explaining arguments and return types.
 
 ---
 
