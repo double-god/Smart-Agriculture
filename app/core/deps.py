@@ -14,12 +14,12 @@ if TYPE_CHECKING:
 # Lazy imports to avoid circular dependency
 def _get_taxonomy_service():
     from app.services.taxonomy_service import get_taxonomy_service
-    return get_taxonomy_service
+    return get_taxonomy_service()
 
 
 def _get_storage_service():
     from app.services.storage import get_storage_service
-    return get_storage_service
+    return get_storage_service()
 
 
 async def depends_taxonomy(

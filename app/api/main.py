@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
+from app.api.endpoints.taxonomy import router as taxonomy_router
 
 # Initialize settings
 settings = get_settings()
@@ -20,6 +21,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Register taxonomy router
+app.include_router(taxonomy_router)
 
 
 @app.get("/")

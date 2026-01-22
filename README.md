@@ -1,53 +1,53 @@
-# Smart Agriculture - Plant Disease and Pest Diagnosis System
+# 智能农业 - 植物病虫害诊断系统
 
-A laboratory-scale intelligent diagnosis system for plant diseases and pests, combining Computer Vision (CV) with Retrieval-Augmented Generation (RAG).
+一个结合计算机视觉 (CV) 与检索增强生成 (RAG) 的实验室级植物病虫害智能诊断系统。
 
-## Features
+## 功能特性
 
-- **CV Integration**: Connect to existing computer vision algorithms for pest/disease identification
-- **RAG-powered Reports**: LangChain-based report generation using retrieved context from ChromaDB
-- **Async Task Processing**: Celery workers handle heavy inference operations
-- **Dynamic Templates**: Separate report formats for diseases vs pests
-- **Health Monitoring**: Built-in health check script for all infrastructure components
+- **CV 集成**: 连接现有的计算机视觉算法进行病虫害识别
+- **基于 RAG 的报告**: 使用从 ChromaDB 检索的上下文，基于 LangChain 生成报告
+- **异步任务处理**: Celery worker 处理繁重的推理操作
+- **动态模板**: 针对病害与虫害分别使用不同的报告格式
+- **健康监控**: 内置针对所有基础设施组件的健康检查脚本
 
-## Quick Start
+## 快速开始
 
-### Prerequisites
+### 环境要求
 
-Ensure you have the following installed:
+确保您已安装以下组件：
 
-- **Python 3.12** ([Download](https://www.python.org/downloads/))
-- **Docker Engine** >= 20.10 ([Install Guide](https://docs.docker.com/engine/install/))
-- **Docker Compose** >= 2.0 ([Install Guide](https://docs.docker.com/compose/install/))
-- **uv** package manager ([Install](https://github.com/astral-sh/uv))
+- **Python 3.12** ([下载](https://www.python.org/downloads/))
+- **Docker Engine** >= 20.10 ([安装指南](https://docs.docker.com/engine/install/))
+- **Docker Compose** >= 2.0 ([安装指南](https://docs.docker.com/compose/install/))
+- **uv** 包管理器 ([安装](https://github.com/astral-sh/uv))
 
-### Installation
+### 安装步骤
 
 ```bash
-# 1. Clone the repository
+# 1. 克隆仓库
 git clone <repository-url>
 cd Smart-Agriculture
 
-# 2. Install uv (if not already installed)
+# 2. 安装 uv (如果尚未安装)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 3. Install Python dependencies
+# 3. 安装 Python 依赖
 uv sync
 
-# 4. Create environment file
+# 4. 创建环境文件
 cp .env.example .env
-# Edit .env with your actual values (especially OPENAI_API_KEY)
+# 使用您的实际值编辑 .env (特别是 OPENAI_API_KEY)
 
-# 5. Start infrastructure services
+# 5. 启动基础设施服务
 docker-compose up -d
 
-# 6. Verify all systems are operational
+# 6. 验证所有系统是否正常运行
 python scripts/doctor.py
 ```
 
-### Expected Output
+### 预期输出
 
-If all checks pass, you should see:
+如果所有检查通过，您应该看到：
 
 ```
 🏥 Smart Agriculture System Health Check
@@ -60,200 +60,201 @@ Checking infrastructure components...
 ✓ All systems operational! (7/7 checks passed)
 ```
 
-## Architecture
+## 系统架构
 
-### Technology Stack
+### 技术栈
 
-| Component | Technology | Purpose |
+| 组件 | 技术 | 用途 |
 |-----------|-----------|---------|
-| Web Framework | **FastAPI** | Async REST API |
-| Task Queue | **Celery** + Redis | Background job processing |
-| Database | **PostgreSQL** | Task persistence |
-| Vector DB | **ChromaDB** | Semantic search for RAG |
-| LLM Orchestration | **LangChain** | Report generation |
-| Storage | **MinIO** | Image persistence |
-| Package Manager | **uv** | Fast dependency management |
+| Web 框架 | **FastAPI** | 异步 REST API |
+| 任务队列 | **Celery** + Redis | 后台任务处理 |
+| 数据库 | **PostgreSQL** | 任务持久化 |
+| 向量数据库 | **ChromaDB** | RAG 语义搜索 |
+| LLM 编排 | **LangChain** | 报告生成 |
+| 存储 | **MinIO** | 图片持久化 |
+| 包管理器 | **uv** | 快速依赖管理 |
 
-### System Flow
+### 系统流程
 
-1. **Upload Image**: User uploads plant image via FastAPI
-2. **Create Task**: System generates task ID and returns immediately
-3. **CV Processing**: Celery worker calls CV algorithm
-4. **Taxonomy Mapping**: Map class_id to standard Chinese name
-5. **RAG Retrieval**: Query ChromaDB with diagnosis name
-6. **Report Generation**: LangChain generates structured report
-7. **Result Polling**: Frontend polls API for completion
+1. **上传图片**: 用户通过 FastAPI 上传植物图片
+2. **创建任务**: 系统生成任务 ID 并立即返回
+3. **CV 处理**: Celery worker 调用 CV 算法
+4. **分类映射**: 将 class_id 映射为标准中文名称
+5. **RAG 检索**: 使用诊断名称查询 ChromaDB
+6. **报告生成**: LangChain 生成结构化报告
+7. **结果轮询**: 前端轮询 API 获取完成结果
 
-### Project Structure
+### 项目结构
 
 ```
 Smart-Agriculture/
 ├── app/
-│   ├── api/              # FastAPI routes
-│   ├── core/             # Configuration & templates
-│   ├── models/           # Pydantic & SQLModel schemas
-│   ├── services/         # External integrations (CV, Chroma, MinIO)
-│   └── worker/           # Celery tasks & chains
-├── data/                 # Static JSON files (taxonomy, etc.)
-├── scripts/              # Utility scripts (doctor.py)
-├── openspec/             # OpenSpec change management
-├── pyproject.toml        # Project metadata & dependencies
-├── Dockerfile            # Multi-stage build
-├── docker-compose.yml    # Service orchestration
+│   ├── api/              # FastAPI 路由
+│   ├── core/             # 配置与模板
+│   ├── models/           # Pydantic & SQLModel 模式
+│   ├── services/         # 外部集成 (CV, Chroma, MinIO)
+│   └── worker/           # Celery 任务与链
+├── data/                 # 静态 JSON 文件 (taxonomy 等)
+├── scripts/              # 工具脚本 (doctor.py)
+├── openspec/             # OpenSpec 变更管理
+├── pyproject.toml        # 项目元数据与依赖
+├── Dockerfile            # 多阶段构建
+├── docker-compose.yml    # 服务编排
 └── README.md
 ```
 
-## Configuration
+## 配置
 
-### Environment Variables
+### 环境变量
 
-Key environment variables (see `.env.example`):
+关键环境变量 (见 `.env.example`):
 
 ```bash
-# Application
+# 应用程序
 APP_NAME=Smart Agriculture
 DEBUG=false
 
-# Database
+# 数据库
 DATABASE_URL=postgresql://postgres:postgres@db:5432/smartag
 
 # Redis
 REDIS_URL=redis://redis:6379/0
 
-# OpenAI (required for LLM features)
+# OpenAI (LLM 功能需要)
 OPENAI_API_KEY=sk-your-key-here
 
 # ChromaDB
 CHROMA_HOST=chroma
 CHROMA_PORT=8000
 
-# MinIO (object storage)
+# MinIO (对象存储)
 MINIO_ENDPOINT=minio:9000
 MINIO_ACCESS_KEY=your-access-key
 MINIO_SECRET_KEY=your-secret-key
 ```
 
-### Port Mappings
+### 端口映射
 
-| Service | Container Port | Host Port |
-|---------|---------------|-----------|
-| FastAPI (Web) | 8000 | 8000 |
-| Celery Worker | - | - (not exposed) |
-| PostgreSQL | 5432 | 5434 |
-| Redis | 6379 | 6379 |
-| ChromaDB | 8000 | 8001 |
-| MinIO | 9000 | 9000 |
+| 服务 | 容器端口 | 主机端口 | 备注 |
+|---------|---------------|-----------|---|
+| FastAPI (Web) | 8000 | 8000 | - |
+| Celery Worker | - | - | 未暴露 |
+| PostgreSQL | 5432 | 5434 | - |
+| Redis | 6379 | 6379 | - |
+| ChromaDB | 8000 | 8001 | - |
+| MinIO API | 9000 | 9010 | 已修改以避免冲突 |
+| MinIO Console | 9001 | 9011 | - |
 
-## Development
+## 开发指南
 
-### Running Tests
+### 运行测试
 
 ```bash
-# Run all tests
+# 运行所有测试
 uv run pytest
 
-# Run with coverage
+# 运行并生成覆盖率报告
 uv run pytest --cov=app --cov-report=html
 ```
 
-### Code Quality
+### 代码质量
 
 ```bash
-# Format code
+# 格式化代码
 uv run black app/ scripts/
 
-# Lint code
+# 代码检查 (Lint)
 uv run ruff check app/ scripts/
 
-# Type checking
+# 类型检查
 uv run mypy app/
 ```
 
-### Adding Dependencies
+### 添加依赖
 
 ```bash
-# Add a new dependency
+# 添加新依赖
 uv add package-name
 
-# Add dev dependency
+# 添加开发依赖
 uv add --dev package-name
 ```
 
-### Docker Development
+### Docker 开发
 
 ```bash
-# Rebuild services after code changes
+# 代码更改后重建服务
 docker-compose up --build
 
-# View logs for a specific service
+# 查看特定服务的日志
 docker-compose logs -f web
 docker-compose logs -f worker
 
-# Stop all services
+# 停止所有服务
 docker-compose down
 
-# Stop and remove volumes (⚠️ deletes data)
+# 停止并删除卷 (⚠️ 会删除数据)
 docker-compose down -v
 ```
 
-## Troubleshooting
+## 故障排除
 
-### Issue: `uv sync` fails
+### 问题: `uv sync` 失败
 
-**Solution**: Ensure you're using Python 3.12
+**解决方案**: 确保您使用的是 Python 3.12
 ```bash
-python --version  # Should be 3.12.x
+python --version  # 应该是 3.12.x
 ```
 
-### Issue: PostgreSQL connection fails in doctor.py
+### 问题: doctor.py 中 PostgreSQL 连接失败
 
-**Solution**: Check if Docker services are running
+**解决方案**: 检查 Docker 服务是否正在运行
 ```bash
 docker-compose ps
 docker-compose logs db
 ```
 
-### Issue: Ports already in use
+### 问题: 端口已被占用
 
-**Solution**: Either stop conflicting services or modify `docker-compose.yml` port mappings
+**解决方案**: 停止冲突的服务或修改 `docker-compose.yml` 端口映射
 
-### Issue: OpenAI API errors
+### 问题: OpenAI API 错误
 
-**Solution**: Verify your API key in `.env`:
+**解决方案**: 在 `.env` 中验证您的 API 密钥:
 ```bash
-echo $OPENAI_API_KEY  # Should start with "sk-"
+echo $OPENAI_API_KEY  # 应该以 "sk-" 开头
 ```
 
-### Issue: ChromaDB connection timeout
+### 问题: ChromaDB 连接超时
 
-**Solution**: ChromaDB takes time to start. Wait 30 seconds after `docker-compose up` before running health checks.
+**解决方案**: ChromaDB 启动需要时间。在 `docker-compose up` 后等待 30 秒再运行运行状况检查。
 
-## OpenSpec Development
+## OpenSpec 开发
 
-This project follows the **OpenSpec** specification-driven development workflow. See `openspec/AGENTS.md` for details.
+本项目遵循 **OpenSpec** 规范驱动的开发工作流。详见 `openspec/AGENTS.md`。
 
-To create a new change:
+创建一个新变更:
 
-1. Create proposal: `openspec/changes/<change-id>/proposal.md`
-2. Write spec: `openspec/changes/<change-id>/specs/<capability>/spec.md`
-3. Define tasks: `openspec/changes/<change-id>/tasks.md`
-4. Validate: `openspec validate <change-id>`
-5. Implement following tasks.md
+1. 创建提案: `openspec/changes/<change-id>/proposal.md`
+2. 编写规范: `openspec/changes/<change-id>/specs/<capability>/spec.md`
+3. 定义任务: `openspec/changes/<change-id>/tasks.md`
+4. 验证: `openspec validate <change-id>`
+5. 按照 tasks.md 实现
 
-## License
+## 许可证
 
 MIT
 
-## Contributing
+## 贡献
 
-1. Follow the [OpenSpec workflow](./openspec/AGENTS.md)
-2. Ensure `python scripts/doctor.py` passes before committing
-3. Keep dependencies up-to-date with `uv sync`
-4. Write tests for new features
+1. 遵循 [OpenSpec 工作流](./openspec/AGENTS.md)
+2. 提交前确保 `python scripts/doctor.py` 通过
+3. 使用 `uv sync` 保持依赖最新
+4. 为新功能编写测试
 
-## Support
+## 支持
 
-For issues or questions:
-- Check the [Troubleshooting](#troubleshooting) section
-- Run `python scripts/doctor.py` to diagnose infrastructure issues
-- Check service logs: `docker-compose logs <service-name>`
+如有问题或疑问:
+- 查看 [故障排除](#troubleshooting) 部分
+- 运行 `python scripts/doctor.py` 诊断基础设施问题
+- 查看服务日志: `docker-compose logs <service-name>`
