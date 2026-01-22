@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "last_updated": "2026-01-22",
+    "description": "实验室病虫害视觉识别标签标准映射表。算法模型输出必须严格对齐此表 ID。",
+    "maintainer": "Agent_Dev_Team"
+  },
+  "taxonomy": [
+    {
+      "id": 0,
+      "model_label": "healthy",
+      "zh_scientific_name": "健康",
+      "latin_name": "N/A",
+      "category": "Status",
+      "action_policy": "PASS",
+      "description": "植株无明显病征"
+    },
+    {
+      "id": 1,
+      "model_label": "aphid_complex",
+      "zh_scientific_name": "蚜虫类",
+      "latin_name": "Aphidoidea",
+      "category": "Pest",
+      "action_policy": "RETRIEVE",
+      "search_keywords": ["棉蚜", "桃蚜", "蚜虫防治"],
+      "note": "视觉难以区分具体亚种，Agent 需检索通用蚜虫防治方案，或追问作物类型。"
+    },
+    {
+      "id": 2,
+      "model_label": "powdery_mildew",
+      "zh_scientific_name": "白粉病",
+      "latin_name": "Erysiphales",
+      "category": "Disease",
+      "action_policy": "RETRIEVE",
+      "search_keywords": ["白粉病", "真菌性病害"],
+      "risk_level": "High"
+    },
+    {
+      "id": 3,
+      "model_label": "spider_mite",
+      "zh_scientific_name": "叶螨",
+      "latin_name": "Tetranychidae",
+      "category": "Pest",
+      "action_policy": "RETRIEVE",
+      "search_keywords": ["红蜘蛛", "二斑叶螨"],
+      "description": "俗称红蜘蛛，需注意抗药性问题"
+    },
+    {
+      "id": 4,
+      "model_label": "unknown_lesion",
+      "zh_scientific_name": "未知病斑",
+      "latin_name": "N/A",
+      "category": "Anomaly",
+      "action_policy": "HUMAN_REVIEW",
+      "description": "模型置信度高但无法分类的异常斑点，转人工复核"
+    }
+  ]
+}

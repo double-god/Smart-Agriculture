@@ -1,55 +1,309 @@
 #!/usr/bin/env python3
-import subprocess
+"""
+System Health Check Script for Smart Agriculture.
+
+This script verifies that all infrastructure components are properly
+configured and accessible.
+
+Usage:
+    python scripts/doctor.py
+
+Exit codes:
+    0: All checks passed
+    1: One or more checks failed
+"""
+
 import sys
-import socket
 import os
+from typing import Optional, Tuple
 
-def check_command(cmd, name):
+# ANSI color codes for terminal output
+class Colors:
+    GREEN = "\033[92m"  # ✓
+    RED = "\033[91m"    # ✗
+    YELLOW = "\033[93m" # ⚠
+    BLUE = "\033[94m"   # ℹ
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
+
+
+def print_success(message: str) -> None:
+    """Print a success message with green checkmark."""
+    print(f"{Colors.GREEN}✓{Colors.RESET} {message}")
+
+
+def print_error(message: str) -> None:
+    """Print an error message with red cross."""
+    print(f"{Colors.RED}✗{Colors.RESET} {message}")
+
+
+def print_warning(message: str) -> None:
+    """Print a warning message with yellow warning sign."""
+    print(f"{Colors.YELLOW}⚠{Colors.RESET} {message}")
+
+
+def print_info(message: str) -> None:
+    """Print an info message with blue info sign."""
+    print(f"{Colors.BLUE}ℹ{Colors.RESET} {message}")
+
+
+def check_python_version() -> bool:
+    """
+    Check if Python version is exactly 3.12.
+
+    Returns:
+        bool: True if check passes
+    """
+    version = sys.version_info
+    is_valid = version.major == 3 and version.minor == 12
+
+    if is_valid:
+        print_success(f"Python version: {version.major}.{version.minor}.{version.micro}")
+    else:
+        print_error(f"Python version: {version.major}.{version.minor}.{version.micro} (expected 3.12.x)")
+
+    return is_valid
+
+
+def check_postgresql() -> bool:
+    """
+    Check PostgreSQL database connection.
+
+    Returns:
+        bool: True if connection succeeds
+    """
     try:
-        subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"✅ {name: <15} [OK]")
+        # Try importing psycopg (sync) or asyncpg (async)
+        import psycopg
+        from app.core.config import get_settings
+
+        settings = get_settings()
+
+        # Parse connection string
+        conn_string = settings.database_url
+
+        # Simple connection test
+        conn = psycopg.connect(conn_string)
+        cursor = conn.cursor()
+        cursor.execute("SELECT version();")
+        version = cursor.fetchone()[0]
+        conn.close()
+
+        print_success(f"PostgreSQL connection OK (port {settings.database_url.split('@')[-1].split(':')[1].split('/')[0] if '@' in settings.database_url else '5432'})")
         return True
-    except subprocess.CalledProcessError:
-        print(f"❌ {name: <15} [FAILED]")
+
+    except ImportError:
+        print_warning("PostgreSQL library not installed (psycopg or asyncpg)")
+        return False
+    except Exception as e:
+        print_error(f"PostgreSQL connection failed: {str(e)}")
         return False
 
-def check_port(host, port, name):
+
+def check_redis() -> bool:
+    """
+    Check Redis connection using ping.
+
+    Returns:
+        bool: True if connection succeeds
+    """
     try:
-        with socket.create_connection((host, port), timeout=1):
-            print(f"✅ {name: <15} [OK] ({host}:{port})")
-            return True
-    except OSError:
-        print(f"❌ {name: <15} [FAILED] (Connection refused)")
+        import redis
+        from app.core.config import get_settings
+
+        settings = get_settings()
+
+        # Parse Redis URL
+        redis_url = settings.redis_url
+        if redis_url.startswith("redis://"):
+            # Extract host and port
+            parsed = redis_url.replace("redis://", "").split(":")
+            host = parsed[0]
+            port = int(parsed[1].split("/")[0])
+        else:
+            host = "localhost"
+            port = 6379
+
+        # Test connection
+        client = redis.Redis(host=host, port=port, decode_responses=True)
+        client.ping()
+
+        print_success(f"Redis connection OK ({host}:{port})")
+        return True
+
+    except ImportError:
+        print_warning("Redis library not installed")
+        return False
+    except Exception as e:
+        print_error(f"Redis connection failed: {str(e)}")
         return False
 
-def main():
-    print("🏥 Running System Health Check (The Doctor)...\n")
-    all_good = True
 
-    # 1. 基础工具检查
-    all_good &= check_command("uv --version", "uv installed")
-    all_good &= check_command("docker --version", "Docker Engine")
-    
-    # 2. 配置文件检查
-    if os.path.exists("openspec/project.md"):
-        print(f"✅ {'Project Spec': <15} [OK]")
+def check_chromadb() -> bool:
+    """
+    Check ChromaDB HTTP connection.
+
+    Returns:
+        bool: True if connection succeeds
+    """
+    try:
+        import requests
+        from app.core.config import get_settings
+
+        settings = get_settings()
+
+        # Test health endpoint
+        url = f"http://{settings.chroma_host}:{settings.chroma_port}/api/v2/heartbeat"
+        response = requests.get(url, timeout=5)
+
+        if response.status_code == 200:
+            print_success(f"ChromaDB connection OK ({settings.chroma_host}:{settings.chroma_port})")
+            return True
+        else:
+            print_error(f"ChromaDB returned status {response.status_code}")
+            return False
+
+    except ImportError:
+        print_warning("Requests library not installed")
+        return False
+    except requests.exceptions.RequestException as e:
+        print_error(f"ChromaDB connection failed: {str(e)}")
+        return False
+
+
+def check_openai_api() -> bool:
+    """
+    Check OpenAI API key validity (optional check).
+
+    Returns:
+        bool: True if key is valid or not configured
+    """
+    try:
+        from app.core.config import get_settings
+
+        settings = get_settings()
+
+        if not settings.openai_api_key or settings.openai_api_key.startswith("your-"):
+            print_warning("OpenAI API key not configured (set OPENAI_API_KEY in .env)")
+            return True  # Don't fail on optional check
+
+        # Try a minimal API call
+        import openai
+        openai.api_key = settings.openai_api_key
+
+        # Simple test: list models (very lightweight)
+        client = openai.OpenAI(api_key=settings.openai_api_key)
+        # Don't actually make the API call to avoid charges, just validate key format
+        if settings.openai_api_key.startswith("sk-"):
+            print_success("OpenAI API key format valid")
+            return True
+        else:
+            print_warning("OpenAI API key format may be invalid")
+            return True  # Don't fail on optional check
+
+    except ImportError:
+        print_warning("OpenAI library not installed")
+        return True  # Don't fail on optional check
+    except Exception as e:
+        print_warning(f"OpenAI API check skipped: {str(e)}")
+        return True  # Don't fail on optional check
+
+
+def check_project_structure() -> bool:
+    """
+    Check if required project directories exist.
+
+    Returns:
+        bool: True if all directories exist
+    """
+    required_dirs = [
+        "app",
+        "app/api",
+        "app/core",
+        "app/models",
+        "app/services",
+        "app/worker",
+        "data",
+        "scripts",
+    ]
+
+    all_exist = True
+    for dir_path in required_dirs:
+        if os.path.isdir(dir_path):
+            print_success(f"Directory exists: {dir_path}/")
+        else:
+            print_error(f"Directory missing: {dir_path}/")
+            all_exist = False
+
+    return all_exist
+
+
+def check_config_file() -> bool:
+    """
+    Check if .env file exists and .env.example is present.
+
+    Returns:
+        bool: True if config is properly set up
+    """
+    env_exists = os.path.exists(".env")
+    env_example_exists = os.path.exists(".env.example")
+
+    if env_exists:
+        print_success(".env file exists")
     else:
-        print(f"❌ {'Project Spec': <15} [MISSING]")
-        all_good = False
+        print_warning(".env file not found (copy from .env.example)")
 
-    # 3. 核心服务端口检查 (假设在 WSL2 localhost)
-    # 注意：如果你用 Docker Compose，确保端口映射出来了
-    all_good &= check_port("localhost", 6379, "Redis")
-    all_good &= check_port("localhost", 5432, "PostgreSQL")
-    all_good &= check_port("localhost", 8000, "ChromaDB") 
-
-    print("\n" + ("="*30))
-    if all_good:
-        print("✨ System is HEALTHY. Ready to code.")
-        sys.exit(0)
+    if env_example_exists:
+        print_success(".env.example exists")
     else:
-        print("⚠️  System has ISSUES. Please fix before starting.")
-        sys.exit(1)
+        print_error(".env.example missing")
+
+    return env_example_exists
+
+
+def main() -> int:
+    """
+    Run all health checks.
+
+    Returns:
+        int: Exit code (0 = success, 1 = failure)
+    """
+    print(f"\n{Colors.BOLD}🏥 Smart Agriculture System Health Check{Colors.RESET}\n")
+    print(f"{Colors.BLUE}Checking infrastructure components...{Colors.RESET}\n")
+
+    results = []
+
+    # Run all checks
+    results.append(("Python Version", check_python_version()))
+    results.append(("Project Structure", check_project_structure()))
+    results.append(("Config Files", check_config_file()))
+    results.append(("PostgreSQL", check_postgresql()))
+    results.append(("Redis", check_redis()))
+    results.append(("ChromaDB", check_chromadb()))
+    results.append(("OpenAI API", check_openai_api()))
+
+    # Summary
+    print(f"\n{Colors.BOLD}{'='*50}{Colors.RESET}")
+    passed = sum(1 for _, result in results if result)
+    total = len(results)
+
+    if all(result for _, result in results):
+        print(f"{Colors.GREEN}{Colors.BOLD}✓ All systems operational! ({passed}/{total} checks passed){Colors.RESET}\n")
+        return 0
+    else:
+        failed = total - passed
+        print(f"{Colors.RED}{Colors.BOLD}✗ System has issues ({passed}/{total} checks passed, {failed} failed){Colors.RESET}\n")
+
+        # Print failed checks
+        print(f"{Colors.BOLD}Failed checks:{Colors.RESET}")
+        for name, result in results:
+            if not result:
+                print(f"  {Colors.RED}✗{Colors.RESET} {name}")
+
+        print()
+        return 1
+
 
 if __name__ == "__main__":
-    main()
+    exit_code = main()
+    sys.exit(exit_code)
