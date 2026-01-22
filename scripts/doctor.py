@@ -16,6 +16,7 @@ Exit codes:
 import os
 import sys
 
+
 # ANSI color codes for terminal output
 class Colors:
     GREEN = "\033[92m"  # ✓
