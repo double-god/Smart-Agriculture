@@ -13,9 +13,8 @@ Exit codes:
     1: One or more checks failed
 """
 
-import sys
 import os
-from typing import Optional, Tuple
+import sys
 
 # ANSI color codes for terminal output
 class Colors:
@@ -60,7 +59,8 @@ def check_python_version() -> bool:
     if is_valid:
         print_success(f"Python version: {version.major}.{version.minor}.{version.micro}")
     else:
-        print_error(f"Python version: {version.major}.{version.minor}.{version.micro} (expected 3.12.x)")
+        msg = f"Python version: {version.major}.{version.minor}.{version.micro} (expected 3.12.x)"
+        print_error(msg)
 
     return is_valid
 
@@ -75,6 +75,7 @@ def check_postgresql() -> bool:
     try:
         # Try importing psycopg (sync) or asyncpg (async)
         import psycopg
+
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -86,10 +87,17 @@ def check_postgresql() -> bool:
         conn = psycopg.connect(conn_string)
         cursor = conn.cursor()
         cursor.execute("SELECT version();")
-        version = cursor.fetchone()[0]
+        result = cursor.fetchone()
+        if result:
+            _ = result[0]
         conn.close()
 
-        print_success(f"PostgreSQL connection OK (port {settings.database_url.split('@')[-1].split(':')[1].split('/')[0] if '@' in settings.database_url else '5432'})")
+        if '@' in settings.database_url:
+            port = settings.database_url.split('@')[-1].split(':')[1].split('/')[0]
+        else:
+            port = "5432"
+
+        print_success(f"PostgreSQL connection OK (port {port})")
         return True
 
     except ImportError:
@@ -109,6 +117,7 @@ def check_redis() -> bool:
     """
     try:
         import redis
+
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -148,6 +157,7 @@ def check_chromadb() -> bool:
     """
     try:
         import requests
+
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -192,7 +202,7 @@ def check_openai_api() -> bool:
         openai.api_key = settings.openai_api_key
 
         # Simple test: list models (very lightweight)
-        client = openai.OpenAI(api_key=settings.openai_api_key)
+        _ = openai.OpenAI(api_key=settings.openai_api_key)
         # Don't actually make the API call to avoid charges, just validate key format
         if settings.openai_api_key.startswith("sk-"):
             print_success("OpenAI API key format valid")
@@ -288,11 +298,19 @@ def main() -> int:
     total = len(results)
 
     if all(result for _, result in results):
-        print(f"{Colors.GREEN}{Colors.BOLD}✓ All systems operational! ({passed}/{total} checks passed){Colors.RESET}\n")
+        msg = (
+            f"{Colors.GREEN}{Colors.BOLD}✓ All systems operational! "
+            f"({passed}/{total} checks passed){Colors.RESET}\n"
+        )
+        print(msg)
         return 0
     else:
         failed = total - passed
-        print(f"{Colors.RED}{Colors.BOLD}✗ System has issues ({passed}/{total} checks passed, {failed} failed){Colors.RESET}\n")
+        msg = (
+            f"{Colors.RED}{Colors.BOLD}✗ System has issues "
+            f"({passed}/{total} checks passed, {failed} failed){Colors.RESET}\n"
+        )
+        print(msg)
 
         # Print failed checks
         print(f"{Colors.BOLD}Failed checks:{Colors.RESET}")
