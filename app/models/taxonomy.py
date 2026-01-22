@@ -21,7 +21,7 @@ class Metadata(BaseModel):
 class TaxonomyEntry(BaseModel):
     """Single taxonomy entry for a pest or disease."""
 
-    id: int = Field(..., description="Unique identifier (0-1000)")
+    id: int = Field(..., description="Unique identifier (0-1000)", ge=0)
     model_label: str = Field(
         ..., description="CV model output label (e.g., 'spider_mite')"
     )

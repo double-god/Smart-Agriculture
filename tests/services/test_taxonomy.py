@@ -4,12 +4,25 @@ Unit tests for TaxonomyService.
 Tests cover loading, querying, error handling, and singleton behavior.
 """
 
+from unittest.mock import mock_open, patch
+
 import pytest
+
 from app.services.taxonomy_service import (
-    TaxonomyService,
     TaxonomyNotFoundError,
+    TaxonomyService,
+    TaxonomyValidationError,
     get_taxonomy_service,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_singleton():
+    """Reset the singleton instance before and after each test."""
+    TaxonomyService._instance = None
+    yield
+    TaxonomyService._instance = None
+
 
 
 def test_load_taxonomy_success():
@@ -94,3 +107,96 @@ def test_search_keywords_empty_when_none():
     # Entry with id=0 (healthy) has no search_keywords
     keywords = service.get_search_keywords(0)
     assert keywords == []
+
+# --- Validation Tests ---
+
+VALID_METADATA = {
+    "version": "1.0.0",
+    "last_updated": "2023-10-27",
+    "description": "Test Taxonomy",
+    "maintainer": "Test Team"
+}
+
+def test_validation_negative_id():
+    """Test that negative ID raises validation error."""
+    bad_data = {
+        "metadata": VALID_METADATA,
+        "taxonomy": [
+            {
+                "id": -1,
+                "model_label": "pest_1",
+                "zh_scientific_name": "害虫1",
+                "latin_name": "Pestus oneus",
+                "category": "Pest",
+                "action_policy": "PASS"
+            }
+        ]
+    }
+
+    # We patch Path.exists to force it to try opening the file
+    # We patch open/json.load to return our bad data
+    with patch("pathlib.Path.exists", return_value=True), \
+         patch("builtins.open", mock_open()), \
+         patch("json.load", return_value=bad_data):
+
+        with pytest.raises(TaxonomyValidationError) as exc:
+            TaxonomyService()
+
+        msg = str(exc.value)
+        # Pydantic v2 error message for ge/gt
+        assert "Input should be greater than or equal to 0" in msg
+
+
+def test_validation_invalid_action_policy():
+    """Test that invalid action_policy raises validation error."""
+    bad_data = {
+        "metadata": VALID_METADATA,
+        "taxonomy": [
+            {
+                "id": 1,
+                "model_label": "pest_1",
+                "zh_scientific_name": "害虫1",
+                "latin_name": "Pestus oneus",
+                "category": "Pest",
+                "action_policy": "DESTROY"  # Invalid
+            }
+        ]
+    }
+
+    with patch("pathlib.Path.exists", return_value=True), \
+         patch("builtins.open", mock_open()), \
+         patch("json.load", return_value=bad_data):
+
+        with pytest.raises(TaxonomyValidationError) as exc:
+            TaxonomyService()
+
+        msg = str(exc.value)
+        assert "Input should be 'PASS', 'RETRIEVE' or 'HUMAN_REVIEW'" in msg
+
+
+def test_validation_missing_field():
+    """Test that missing required field raises validation error."""
+    bad_data = {
+        "metadata": VALID_METADATA,
+        "taxonomy": [
+            {
+                "id": 1,
+                "model_label": "pest_1",
+                # zh_scientific_name is missing
+                "latin_name": "Pestus oneus",
+                "category": "Pest",
+                "action_policy": "PASS"
+            }
+        ]
+    }
+
+    with patch("pathlib.Path.exists", return_value=True), \
+         patch("builtins.open", mock_open()), \
+         patch("json.load", return_value=bad_data):
+
+        with pytest.raises(TaxonomyValidationError) as exc:
+            TaxonomyService()
+
+        msg = str(exc.value)
+        assert "Field required" in msg
+        assert "zh_scientific_name" in msg

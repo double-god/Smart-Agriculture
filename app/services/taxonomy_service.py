@@ -5,14 +5,23 @@ This module provides a singleton service that loads taxonomy_standard_v1.json
 and provides fast in-memory lookups for taxonomy entries.
 """
 
-from app.models.taxonomy import TaxonomyStandard, TaxonomyEntry, Metadata
-from pathlib import Path
 import json
+from pathlib import Path
 from typing import Optional
+
+from pydantic import ValidationError
+
+from app.models.taxonomy import Metadata, TaxonomyEntry, TaxonomyStandard
 
 
 class TaxonomyNotFoundError(Exception):
     """Raised when a taxonomy entry is not found."""
+
+    pass
+
+
+class TaxonomyValidationError(Exception):
+    """Raised when taxonomy data fails validation."""
 
     pass
 
@@ -50,7 +59,10 @@ class TaxonomyService:
             data = json.load(f)
 
         # Validate with Pydantic
-        self._data = TaxonomyStandard(**data)
+        try:
+            self._data = TaxonomyStandard(**data)
+        except ValidationError as e:
+            raise TaxonomyValidationError(f"Invalid taxonomy data: {e}") from e
 
         # Build indexes for fast lookup
         self._by_id: dict[int, TaxonomyEntry] = {
