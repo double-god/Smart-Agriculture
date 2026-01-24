@@ -9,6 +9,8 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.api.endpoints.taxonomy import router as taxonomy_router
+from app.api.endpoints.upload import router as upload_router
+from app.api.endpoints.diagnose import router as diagnose_router
 
 # Initialize settings
 settings = get_settings()
@@ -22,8 +24,10 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Register taxonomy router
+# Register routers
 app.include_router(taxonomy_router)
+app.include_router(upload_router)
+app.include_router(diagnose_router)
 
 
 @app.get("/")

@@ -5,11 +5,12 @@ This module provides dependency injection functions for FastAPI routes.
 """
 
 from typing import TYPE_CHECKING
+
 from fastapi import Depends
 
 if TYPE_CHECKING:
-    from app.services.taxonomy_service import TaxonomyService
     from app.services.storage import StorageService
+    from app.services.taxonomy_service import TaxonomyService
 
 # Lazy imports to avoid circular dependency
 def _get_taxonomy_service():
