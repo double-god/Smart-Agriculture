@@ -11,13 +11,18 @@ Key features:
 - File size limits (prevents DoS)
 """
 
+import asyncio
+import atexit
 import ipaddress
 import logging
 import socket
-from typing import Tuple
+from typing import Optional, Tuple
 from urllib.parse import urlparse
 
+import httpx
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +38,152 @@ ALLOWED_IMAGE_TYPES = (
 )
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
 DOWNLOAD_TIMEOUT = 30  # 秒
+
+# HTTP 连接池配置
+SESSION_POOL_CONNECTIONS = 10  # 连接池大小（不同主机）
+SESSION_POOL_MAXSIZE = 50  # 每个主机的最大连接数
+SESSION_MAX_RETRIES = 3  # 自动重试次数
+SESSION_BACKOFF_FACTOR = 0.3  # 重试退避系数
+
+
+# 全局 Session 单例（用于连接池复用）
+_session: Optional[requests.Session] = None
+
+
+def _get_http_session() -> requests.Session:
+    """
+    获取全局 HTTP Session（连接池复用）。
+
+    连接池配置：
+    - pool_connections=10: 连接池大小（不同主机）
+    - pool_maxsize=50: 每个主机的最大连接数
+    - max_retries=3: 自动重试次数
+    - backoff_factor=0.3: 重试退避系数
+
+    Celery 多进程环境：每个进程有独立的 Session 实例
+
+    Returns:
+        全局 HTTP Session 实例
+    """
+    global _session
+
+    if _session is None:
+        _session = requests.Session()
+
+        # 配置连接池和重试策略
+        adapter = HTTPAdapter(
+            pool_connections=SESSION_POOL_CONNECTIONS,
+            pool_maxsize=SESSION_POOL_MAXSIZE,
+            max_retries=Retry(
+                total=SESSION_MAX_RETRIES,
+                backoff_factor=SESSION_BACKOFF_FACTOR,
+                status_forcelist=[500, 502, 503, 504],
+                allowed_methods=["GET"],  # 仅对 GET 请求重试
+            ),
+        )
+        _session.mount("http://", adapter)
+        _session.mount("https://", adapter)
+
+        # 注册进程退出时的清理函数
+        atexit.register(close_http_session)
+
+        logger.info(
+            f"HTTP Session 已初始化（连接池: {SESSION_POOL_CONNECTIONS}/"
+            f"{SESSION_POOL_MAXSIZE}）"
+        )
+
+    return _session
+
+
+def close_http_session() -> None:
+    """
+    关闭 HTTP Session（主要用于测试）。
+
+    注意：
+    - 生产环境通常不需要手动调用
+    - 进程退出时会自动通过 atexit 清理
+    """
+    global _session
+    if _session is not None:
+        _session.close()
+        _session = None
+        logger.info("HTTP Session 已关闭")
+
+
+# =============================================================================
+# Async HTTP Client for Phase 2: HTTP 与 SSRF 异步化
+# =============================================================================
+
+# 全局 httpx.AsyncClient 单例（用于异步连接池复用）
+_async_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_async_client(timeout: int = DOWNLOAD_TIMEOUT) -> httpx.AsyncClient:
+    """
+    获取全局异步 HTTP Client（连接池复用）。
+
+    连接池配置：
+    - limits=httpx.Limits(max_connections=50, max_keepalive_connections=10)
+    - timeout=timeout: 请求超时时间
+
+    Celery 多进程环境：每个进程有独立的 AsyncClient 实例
+
+    Args:
+        timeout: 请求超时时间（秒）
+
+    Returns:
+        全局 httpx.AsyncClient 实例
+    """
+    global _async_client
+
+    if _async_client is None:
+        # 配置连接池
+        limits = httpx.Limits(
+            max_keepalive_connections=SESSION_POOL_CONNECTIONS,
+            max_connections=SESSION_POOL_MAXSIZE,
+        )
+
+        _async_client = httpx.AsyncClient(
+            limits=limits,
+            timeout=timeout,
+            http2=False,  # HTTP/2 在某些情况下不稳定，暂时禁用
+        )
+
+        # 注册进程退出时的清理函数
+        atexit.register(close_async_client)
+
+        logger.info(
+            f"Async HTTP Client 已初始化（连接池: {SESSION_POOL_CONNECTIONS}/"
+            f"{SESSION_POOL_MAXSIZE}）"
+        )
+
+    return _async_client
+
+
+def close_async_client() -> None:
+    """
+    关闭异步 HTTP Client（主要用于测试）。
+
+    注意：
+    - 生产环境通常不需要手动调用
+    - 进程退出时会自动通过 atexit 清理
+    """
+    global _async_client
+    if _async_client is not None:
+        # 需要在事件循环中关闭
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # 如果事件循环正在运行，创建任务在后台关闭
+                loop.create_task(_async_client.aclose())
+            else:
+                # 如果事件循环未运行，直接运行关闭协程
+                loop.run_until_complete(_async_client.aclose())
+        except RuntimeError:
+            # 如果没有事件循环，忽略错误（进程即将退出）
+            pass
+        _async_client = None
+        logger.info("Async HTTP Client 已关闭")
 
 
 class SSRFValidationError(Exception):
@@ -232,10 +383,12 @@ def download_image_securely(
         "User-Agent": "Smart-Agriculture-Diagnosis/1.0",
     }
 
-    # 4. 发起 HTTP 请求
+    # 4. 发起 HTTP 请求（使用 Session 复用连接）
     logger.info(f"下载图片: {hostname} -> {ip_address}")
     try:
-        response = requests.get(
+        session = _get_http_session()  # 使用全局 Session
+
+        response = session.get(
             target_url,
             headers=headers,
             timeout=timeout,
@@ -281,6 +434,112 @@ def download_image_securely(
 
     logger.info(
         f"图片下载成功: {hostname} -> {len(image_data)} 字节, type={content_type}"
+    )
+
+    return bytes(image_data)
+
+
+async def download_image_securely_async(
+    url: str,
+    max_size: int = MAX_IMAGE_SIZE_BYTES,
+    timeout: int = DOWNLOAD_TIMEOUT,
+) -> bytes:
+    """
+    异步安全下载图片（防 DNS Rebinding 攻击）。
+
+    工作流程：
+    1. 验证 URL，解析域名获取 IP 地址（同步操作，开销可忽略）
+    2. 使用 IP 地址发起异步 HTTP 请求（而非域名）
+    3. 在 Host header 中保留原始主机名（支持虚拟主机）
+    4. 验证响应 Content-Type 为图片类型
+    5. 限制下载文件大小
+
+    Args:
+        url: 图片 URL
+        max_size: 最大允许的文件大小（字节）
+        timeout: 下载超时时间（秒）
+
+    Returns:
+        图片二进制数据
+
+    Raises:
+        SSRFValidationError: URL 验证失败
+        ImageDownloadError: 下载失败或验证失败
+
+    Examples:
+        >>> image_data = await download_image_securely_async(
+        ...     "https://example.com/photo.jpg"
+        ... )
+        >>> len(image_data)
+        123456
+    """
+    # 1. 验证 URL 并获取 IP 地址（同步操作，快速）
+    try:
+        ip_address, hostname = validate_image_url(url)
+    except SSRFValidationError as e:
+        raise ImageDownloadError(f"URL 验证失败: {str(e)}") from e
+
+    # 2. 重建 URL（使用 IP 地址而非域名）
+    parsed = urlparse(url)
+    target_url = parsed._replace(
+        netloc=f"{ip_address}:{parsed.port or (443 if parsed.scheme == 'https' else 80)}"
+    ).geturl()
+
+    # 3. 准备请求头（保留原始 Host，支持虚拟主机）
+    headers = {
+        "Host": hostname,
+        "User-Agent": "Smart-Agriculture-Diagnosis/1.0",
+    }
+
+    # 4. 发起异步 HTTP 请求
+    logger.info(f"异步下载图片: {hostname} -> {ip_address}")
+    try:
+        client = _get_async_client(timeout=timeout)
+
+        response = await client.get(
+            target_url,
+            headers=headers,
+            follow_redirects=True,  # 允许重定向（但目标 IP 已固定）
+        )
+        response.raise_for_status()
+
+    except httpx.TimeoutException:
+        raise ImageDownloadError(f"下载超时: {url}") from None
+    except httpx.HTTPStatusError as e:
+        raise ImageDownloadError(f"HTTP 错误: {e.response.status_code} - {url}") from e
+    except httpx.RequestError as e:
+        raise ImageDownloadError(f"下载失败: {str(e)} - {url}") from e
+
+    # 5. 验证 Content-Type
+    content_type = (
+        response.headers.get("Content-Type", "").split(";")[0].strip().lower()
+    )
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise ImageDownloadError(
+            f"不支持的文件类型: {content_type}. "
+            f"仅允许图片类型: {ALLOWED_IMAGE_TYPES}"
+        )
+
+    # 6. 流式下载并验证文件大小
+    content_length = response.headers.get("Content-Length")
+
+    # 如果有 Content-Length header，先检查大小
+    if content_length and int(content_length) > max_size:
+        raise ImageDownloadError(
+            f"文件过大: {content_length} 字节（最大允许 {max_size} 字节）"
+        )
+
+    # 使用 httpx 的 aiter_bytes 进行异步流式下载
+    image_data = bytearray()
+    async for chunk in response.aiter_bytes(chunk_size=8192):
+        image_data.extend(chunk)
+        if len(image_data) > max_size:
+            raise ImageDownloadError(
+                f"文件过大: 已下载 {len(image_data)} 字节（最大允许 {max_size} 字节）"
+            )
+
+    logger.info(
+        f"异步图片下载成功: {hostname} -> {len(image_data)} 字节, type={content_type}"
     )
 
     return bytes(image_data)

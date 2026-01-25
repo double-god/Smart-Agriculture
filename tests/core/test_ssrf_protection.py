@@ -250,9 +250,9 @@ class TestValidateImageUrl:
 class TestDownloadImageSecurely:
     """Tests for download_image_securely function."""
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_success(self, mock_validate, mock_get):
+    def test_download_success(self, mock_validate, mock_get_session):
         """测试成功下载图片."""
         # Setup mocks
         mock_validate.return_value = ("93.184.216.34", "example.com")
@@ -264,7 +264,11 @@ class TestDownloadImageSecurely:
         }
         mock_response.iter_content = lambda chunk_size: [b"fake_image_data"] * 10
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+
+        # Mock Session
+        mock_session = Mock()
+        mock_session.get.return_value = mock_response
+        mock_get_session.return_value = mock_session
 
         # Execute
         image_data = download_image_securely("https://example.com/photo.jpg")
@@ -274,16 +278,16 @@ class TestDownloadImageSecurely:
         assert image_data == b"fake_image_data" * 10
 
         # 验证使用了 IP 地址发起请求
-        call_args = mock_get.call_args
+        call_args = mock_session.get.call_args
         assert "93.184.216.34" in call_args[0][0]  # URL 使用 IP 而非域名
 
         # 验证 Host header 是原始域名
         headers = call_args[1]["headers"]
         assert headers["Host"] == "example.com"
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_blocks_non_image_content_type(self, mock_validate, mock_get):
+    def test_download_blocks_non_image_content_type(self, mock_validate, mock_get_session):
         """测试阻止非图片 Content-Type."""
         from app.core.ssrf_protection import ImageDownloadError
 
@@ -294,7 +298,11 @@ class TestDownloadImageSecurely:
             "Content-Type": "text/html",  # 非图片类型
         }
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+
+        # Mock Session
+        mock_session = Mock()
+        mock_session.get.return_value = mock_response
+        mock_get_session.return_value = mock_session
 
         with pytest.raises(ImageDownloadError) as exc_info:
             download_image_securely("https://example.com/page.html")
@@ -302,9 +310,9 @@ class TestDownloadImageSecurely:
         assert "不支持的文件类型" in str(exc_info.value)
         assert "text/html" in str(exc_info.value)
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_enforces_size_limit_content_length(self, mock_validate, mock_get):
+    def test_download_enforces_size_limit_content_length(self, mock_validate, mock_get_session):
         """测试通过 Content-Length header 强制执行大小限制."""
         from app.core.ssrf_protection import ImageDownloadError
 
@@ -316,16 +324,19 @@ class TestDownloadImageSecurely:
             "Content-Length": "20971520",  # 20MB（超过默认 10MB 限制）
         }
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+        # Mock Session
+        mock_session = Mock()
+        mock_session.get.return_value = mock_response
+        mock_get_session.return_value = mock_session
 
         with pytest.raises(ImageDownloadError) as exc_info:
             download_image_securely("https://example.com/huge.jpg")
 
         assert "文件过大" in str(exc_info.value)
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_enforces_size_limit_during_stream(self, mock_validate, mock_get):
+    def test_download_enforces_size_limit_during_stream(self, mock_validate, mock_get_session):
         """测试在流式下载期间强制执行大小限制（无 Content-Length）."""
         from app.core.ssrf_protection import ImageDownloadError
 
@@ -346,16 +357,19 @@ class TestDownloadImageSecurely:
         }
         mock_response.iter_content = mock_iter_content
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+        # Mock Session
+        mock_session = Mock()
+        mock_session.get.return_value = mock_response
+        mock_get_session.return_value = mock_session
 
         with pytest.raises(ImageDownloadError) as exc_info:
             download_image_securely("https://example.com/huge.jpg", max_size=5 * 1024 * 1024)
 
         assert "文件过大" in str(exc_info.value)
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_http_error(self, mock_validate, mock_get):
+    def test_download_http_error(self, mock_validate, mock_get_session):
         """测试 HTTP 错误处理."""
         from app.core.ssrf_protection import ImageDownloadError
 
@@ -368,7 +382,10 @@ class TestDownloadImageSecurely:
         http_error.response = mock_response
 
         mock_response.raise_for_status.side_effect = http_error
-        mock_get.return_value = mock_response
+        # Mock Session
+        mock_session = Mock()
+        mock_session.get.return_value = mock_response
+        mock_get_session.return_value = mock_session
 
         with pytest.raises(ImageDownloadError) as exc_info:
             download_image_securely("https://example.com/missing.jpg")
@@ -376,37 +393,45 @@ class TestDownloadImageSecurely:
         assert "HTTP 错误" in str(exc_info.value)
         assert "404" in str(exc_info.value)
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_timeout(self, mock_validate, mock_get):
+    def test_download_timeout(self, mock_validate, mock_get_session):
         """测试下载超时."""
         from app.core.ssrf_protection import ImageDownloadError
 
         mock_validate.return_value = ("93.184.216.34", "example.com")
-        mock_get.side_effect = requests.exceptions.Timeout()
+
+        # Mock Session with timeout
+        mock_session = Mock()
+        mock_session.get.side_effect = requests.exceptions.Timeout()
+        mock_get_session.return_value = mock_session
 
         with pytest.raises(ImageDownloadError) as exc_info:
             download_image_securely("https://example.com/slow.jpg")
 
         assert "下载超时" in str(exc_info.value)
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_network_error(self, mock_validate, mock_get):
+    def test_download_network_error(self, mock_validate, mock_get_session):
         """测试网络错误."""
         from app.core.ssrf_protection import ImageDownloadError
 
         mock_validate.return_value = ("93.184.216.34", "example.com")
-        mock_get.side_effect = requests.exceptions.ConnectionError("Network unreachable")
+
+        # Mock Session with connection error
+        mock_session = Mock()
+        mock_session.get.side_effect = requests.exceptions.ConnectionError("Network unreachable")
+        mock_get_session.return_value = mock_session
 
         with pytest.raises(ImageDownloadError) as exc_info:
             download_image_securely("https://example.com/photo.jpg")
 
         assert "下载失败" in str(exc_info.value)
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_propagates_ssrf_validation_error(self, mock_validate, mock_get):
+    def test_download_propagates_ssrf_validation_error(self, mock_validate, mock_get_session):
         """测试将 SSRFValidationError 转换为 ImageDownloadError."""
         from app.core.ssrf_protection import ImageDownloadError
 
@@ -419,9 +444,9 @@ class TestDownloadImageSecurely:
         assert "URL 验证失败" in str(exc_info.value)
         assert "禁止访问内网地址" in str(exc_info.value)
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_supports_all_allowed_image_types(self, mock_validate, mock_get):
+    def test_download_supports_all_allowed_image_types(self, mock_validate, mock_get_session):
         """测试支持所有允许的图片类型."""
         mock_validate.return_value = ("93.184.216.34", "example.com")
 
@@ -434,15 +459,19 @@ class TestDownloadImageSecurely:
             }
             mock_response.iter_content = lambda chunk_size: [b"data"]
             mock_response.raise_for_status = Mock()
-            mock_get.return_value = mock_response
+
+            # Mock Session
+            mock_session = Mock()
+            mock_session.get.return_value = mock_response
+            mock_get_session.return_value = mock_session
 
             # 不应抛出异常
             image_data = download_image_securely("https://example.com/photo.jpg")
             assert len(image_data) > 0
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_handles_content_type_with_parameters(self, mock_validate, mock_get):
+    def test_download_handles_content_type_with_parameters(self, mock_validate, mock_get_session):
         """测试处理带参数的 Content-Type（如 charset）."""
         mock_validate.return_value = ("93.184.216.34", "example.com")
         mock_response = Mock()
@@ -453,15 +482,18 @@ class TestDownloadImageSecurely:
         }
         mock_response.iter_content = lambda chunk_size: [b"data"]
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+        # Mock Session
+        mock_session = Mock()
+        mock_session.get.return_value = mock_response
+        mock_get_session.return_value = mock_session
 
         # 不应抛出异常（应正确提取 "image/jpeg"）
         image_data = download_image_securely("https://example.com/photo.jpg")
         assert len(image_data) > 0
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_download_follows_redirects(self, mock_validate, mock_get):
+    def test_download_follows_redirects(self, mock_validate, mock_get_session):
         """测试允许 HTTP 重定向."""
         mock_validate.return_value = ("93.184.216.34", "example.com")
 
@@ -474,21 +506,25 @@ class TestDownloadImageSecurely:
         }
         mock_response_final.iter_content = lambda chunk_size: [b"data"]
         mock_response_final.raise_for_status = Mock()
-        mock_get.return_value = mock_response_final
+
+        # Mock Session
+        mock_session = Mock()
+        mock_session.get.return_value = mock_response_final
+        mock_get_session.return_value = mock_session
 
         image_data = download_image_securely("https://example.com/redirect.jpg")
 
         assert len(image_data) > 0
         # 验证 allow_redirects=True
-        assert mock_get.call_args[1]["allow_redirects"] is True
+        assert mock_session.get.call_args[1]["allow_redirects"] is True
 
 
 class TestDNSRebindingProtection:
     """Tests for DNS Rebinding attack protection."""
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_dns_rebinding_prevention_ip_used_in_request(self, mock_validate, mock_get):
+    def test_dns_rebinding_prevention_ip_used_in_request(self, mock_validate, mock_get_session):
         """
         测试 DNS Rebinding 防护：请求使用 IP 地址而非域名.
 
@@ -503,19 +539,22 @@ class TestDNSRebindingProtection:
         }
         mock_response.iter_content = lambda chunk_size: [b"data"]
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+        # Mock Session
+        mock_session = Mock()
+        mock_session.get.return_value = mock_response
+        mock_get_session.return_value = mock_session
 
         download_image_securely("https://example.com/photo.jpg")
 
         # 关键验证：请求 URL 使用 IP 地址而非域名
-        call_args = mock_get.call_args
+        call_args = mock_session.get.call_args
         request_url = call_args[0][0]
         assert "93.184.216.34" in request_url
         assert "example.com" not in request_url  # URL 中不应包含域名
 
-    @patch("app.core.ssrf_protection.requests.get")
+    @patch("app.core.ssrf_protection._get_http_session")
     @patch("app.core.ssrf_protection.validate_image_url")
-    def test_dns_rebounding_preserves_host_header(self, mock_validate, mock_get):
+    def test_dns_rebounding_preserves_host_header(self, mock_validate, mock_get_session):
         """
         测试 DNS Rebinding 防护：Host header 保留原始域名.
 
@@ -530,11 +569,99 @@ class TestDNSRebindingProtection:
         }
         mock_response.iter_content = lambda chunk_size: [b"data"]
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+        # Mock Session
+        mock_session = Mock()
+        mock_session.get.return_value = mock_response
+        mock_get_session.return_value = mock_session
 
         download_image_securely("https://cdn.example.com/photo.jpg")
 
         # 关键验证：Host header 是原始域名
-        call_args = mock_get.call_args
+        call_args = mock_session.get.call_args
         headers = call_args[1]["headers"]
         assert headers["Host"] == "cdn.example.com"
+
+
+class TestHTTPSessionManagement:
+    """测试 HTTP Session 管理和连接池."""
+
+    def test_session_singleton(self):
+        """测试 Session 单例模式."""
+        from app.core.ssrf_protection import close_http_session, _get_http_session
+
+        close_http_session()  # 重置
+
+        session1 = _get_http_session()
+        session2 = _get_http_session()
+
+        # 验证返回的是同一个实例
+        assert session1 is session2
+
+        close_http_session()
+
+    def test_session_initialization(self):
+        """测试 Session 正确初始化."""
+        from app.core.ssrf_protection import close_http_session, _get_http_session
+
+        close_http_session()
+        session = _get_http_session()
+
+        # 验证适配器类型
+        adapter = session.get_adapter("https://example.com")
+        from requests.adapters import HTTPAdapter
+        assert isinstance(adapter, HTTPAdapter)
+
+        # 验证重试配置
+        assert adapter.max_retries.total == 3
+        assert adapter.max_retries.backoff_factor == 0.3
+
+        # 验证重试状态码列表
+        assert 500 in adapter.max_retries.status_forcelist
+        assert 503 in adapter.max_retries.status_forcelist
+
+        close_http_session()
+
+    def test_session_close(self):
+        """测试 Session 关闭功能."""
+        from app.core.ssrf_protection import close_http_session, _get_http_session
+
+        close_http_session()
+        session = _get_http_session()
+
+        # 关闭后重新获取应该是新实例
+        close_http_session()
+        new_session = _get_http_session()
+
+        assert session is not new_session
+
+        close_http_session()
+
+    @patch("app.core.ssrf_protection.validate_image_url")
+    def test_download_uses_session(self, mock_validate):
+        """测试 download_image_securely 使用 Session."""
+        from app.core.ssrf_protection import close_http_session, download_image_securely
+
+        mock_validate.return_value = ("93.184.216.34", "example.com")
+
+        # 重置 Session 以确保干净状态
+        close_http_session()
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {"Content-Type": "image/jpeg"}
+        mock_response.iter_content = lambda chunk_size: [b"test"]
+        mock_response.raise_for_status = Mock()
+
+        # Mock Session 的 get 方法
+        with patch("app.core.ssrf_protection._get_http_session") as mock_get_session:
+            mock_session = Mock()
+            mock_session.get.return_value = mock_response
+            mock_get_session.return_value = mock_session
+
+            download_image_securely("https://example.com/photo.jpg")
+
+            # 验证使用了 Session
+            mock_get_session.assert_called_once()
+            mock_session.get.assert_called_once()
+
+        close_http_session()

@@ -490,3 +490,123 @@ def generate_diagnosis_report(
         # Generic error
         logger.error(f"Failed to generate report: {error_type}: {error_msg}")
         raise LLMError(f"Report generation failed: {error_msg}") from e
+
+
+async def generate_diagnosis_report_async(
+    diagnosis_name: str,
+    crop_type: str,
+    confidence: float,
+    contexts: List[Document],
+    llm: Optional[ChatOpenAI] = None,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> str:
+    """
+    Async version of generate_diagnosis_report().
+
+    This function provides async/await interface for LLM-based report generation,
+    enabling efficient concurrency in Celery workers when processing multiple requests.
+
+    Args:
+        diagnosis_name: Name of the diagnosed disease (e.g., "番茄晚疫病")
+        crop_type: Type of crop (e.g., "番茄")
+        confidence: Confidence score (0.0 to 1.0)
+        contexts: List of relevant documents retrieved from knowledge base
+        llm: Optional pre-configured LLM instance (for testing/customization)
+        timeout: Request timeout in seconds (default: 30)
+
+    Returns:
+        Generated diagnosis report in Markdown format
+
+    Raises:
+        ReportTimeoutError: If LLM call exceeds timeout
+        LLMError: If LLM API call fails for any reason
+
+    Example:
+        >>> import asyncio
+        >>> from app.worker.chains import generate_diagnosis_report_async
+        >>> report = asyncio.run(generate_diagnosis_report_async(
+        ...     diagnosis_name="番茄晚疫病",
+        ...     crop_type="番茄",
+        ...     confidence=0.92,
+        ...     contexts=relevant_docs,
+        ... ))
+        >>> print(report)
+    """
+    logger.info(f"Generating async report for {diagnosis_name} (confidence={confidence:.2f})")
+
+    # Validate inputs
+    if not diagnosis_name or not diagnosis_name.strip():
+        raise ValueError("diagnosis_name cannot be empty")
+
+    if not crop_type or not crop_type.strip():
+        raise ValueError("crop_type cannot be empty")
+
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError("confidence must be between 0.0 and 1.0")
+
+    try:
+        # Initialize LLM
+        if llm is None:
+            llm = _get_llm(timeout=timeout)
+
+        # Format contexts
+        context_section = _format_contexts(contexts)
+
+        # Generate confidence warning
+        confidence_warning = _get_confidence_warning(confidence)
+
+        # Create prompt
+        prompt_template = PromptTemplate(
+            template=SIMPLIFIED_REPORT_TEMPLATE,
+            input_variables=[
+                "crop_type",
+                "diagnosis_name",
+                "confidence",
+                "confidence_warning",
+                "context_section",
+            ],
+        )
+
+        # Build prompt inputs
+        prompt_inputs = {
+            "crop_type": crop_type,
+            "diagnosis_name": diagnosis_name,
+            "confidence": confidence,
+            "confidence_warning": confidence_warning,
+            "context_section": context_section,
+        }
+
+        # Generate report using async LLM chain
+        logger.info("Invoking LLM for async report generation...")
+        chain = prompt_template | llm | StrOutputParser()
+        report = await chain.ainvoke(prompt_inputs)
+
+        logger.info(f"Async report generated successfully ({len(report)} chars)")
+        return report
+
+    except ReportTimeoutError as e:
+        logger.error(f"Async LLM call timed out after {timeout}s: {str(e)}")
+        raise
+
+    except Exception as e:
+        error_type = type(e).__name__
+        error_msg = str(e)
+
+        # Handle timeout errors
+        if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+            logger.error(f"Async LLM timeout: {error_msg}")
+            raise ReportTimeoutError(f"LLM call timed out: {error_msg}") from e
+
+        # Handle rate limit errors
+        if "rate limit" in error_msg.lower() or "429" in error_msg:
+            logger.error(f"OpenAI rate limit exceeded: {error_msg}")
+            raise LLMError(f"API rate limit exceeded: {error_msg}") from e
+
+        # Handle authentication errors
+        if "authentication" in error_msg.lower() or "401" in error_msg:
+            logger.error(f"OpenAI authentication failed: {error_msg}")
+            raise LLMError(f"API authentication failed: {error_msg}") from e
+
+        # Generic error
+        logger.error(f"Failed to generate async report: {error_type}: {error_msg}")
+        raise LLMError(f"Report generation failed: {error_msg}") from e

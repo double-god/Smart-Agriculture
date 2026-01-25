@@ -18,7 +18,7 @@ from functools import lru_cache
 from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 
@@ -211,6 +211,108 @@ class RAGService:
 
         except Exception as e:
             logger.error(f"Failed to query ChromaDB: {str(e)}")
+            raise
+
+    async def query_async(
+        self,
+        query_text: str,
+        top_k: int = 3,
+        filter_metadata: Optional[Dict] = None,
+    ) -> List[Document]:
+        """
+        异步检索相关文档（使用语义搜索）。
+
+        Args:
+            query_text: 查询文本（如疾病名称、症状描述）
+            top_k: 返回文档数量（默认: 3）
+            filter_metadata: 可选的元数据过滤器（如 {"category": "diseases"}）
+                           支持 JSON 可序列化类型：str, int, float, bool, list, dict, None
+
+        Returns:
+            按相关性排序的 Document 对象列表
+
+        Raises:
+            RAGServiceNotInitializedError: ChromaDB 未初始化
+            ValueError: query_text 为空
+            TypeError: filter_metadata 包含不可序列化的类型（如 datetime、自定义对象）
+
+        Example:
+            >>> rag = get_rag_service()
+            >>> docs = await rag.query_async("番茄晚疫病", top_k=3)
+            >>> for doc in docs:
+            ...     print(f"{doc.metadata['source']}: {doc.page_content[:100]}")
+        """
+        if not query_text or not query_text.strip():
+            raise ValueError("query_text cannot be empty")
+
+        # 将 filter_metadata 转换为 JSON 字符串用于缓存
+        # sort_keys=True 确保 {"a":1, "b":2} 和 {"b":2, "a":1} 生成相同的缓存 key
+        try:
+            filter_json = (
+                json.dumps(filter_metadata, sort_keys=True)
+                if filter_metadata is not None
+                else None
+            )
+        except (TypeError, ValueError) as e:
+            raise TypeError(
+                f"filter_metadata 包含不可 JSON 序列化的类型: {e}. "
+                "仅支持 str, int, float, bool, list, dict, None"
+            ) from e
+
+        return await self._cached_search_async(query_text, top_k, filter_json)
+
+    async def _cached_search_async(
+        self,
+        query_text: str,
+        top_k: int,
+        filter_json: Optional[str],
+    ) -> List[Document]:
+        """
+        异步缓存相似度搜索实现（使用 JSON 字符串作为缓存 key）。
+
+        注意：由于 @lru_cache 不支持 async 函数，这里不使用缓存装饰器。
+        异步调用通常在高并发场景，缓存效果有限。
+
+        Args:
+            query_text: 查询文本
+            top_k: 返回结果数量
+            filter_json: JSON 序列化后的 filter_metadata 字符串（用于缓存 key）
+        """
+        logger.info(f"Async querying ChromaDB: '{query_text}' (top_k={top_k})")
+
+        # 将 JSON 字符串转换回字典用于 ChromaDB 查询
+        try:
+            filter_metadata = (
+                json.loads(filter_json) if filter_json is not None else None
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to deserialize filter_json: {e}")
+            filter_metadata = None
+
+        if filter_metadata:
+            logger.info(f"Filter metadata: {filter_metadata}")
+
+        try:
+            chroma_db = self._get_chroma_db()
+
+            # 异步执行相似度搜索
+            if filter_metadata:
+                results = await chroma_db.asimilarity_search(
+                    query_text,
+                    k=top_k,
+                    filter=filter_metadata,
+                )
+            else:
+                results = await chroma_db.asimilarity_search(query_text, k=top_k)
+
+            logger.info(f"Retrieved {len(results)} documents (async)")
+            for i, doc in enumerate(results):
+                logger.debug(f"  [{i+1}] {doc.metadata.get('source', 'unknown')}")
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Failed to query ChromaDB (async): {str(e)}")
             raise
 
 
