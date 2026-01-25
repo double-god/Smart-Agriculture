@@ -50,6 +50,8 @@ class DiagnosisResult(BaseModel):
     risk_level: Optional[str] = Field(None, description="风险等级")
     crop_type: Optional[str] = Field(None, description="作物类型")
     location: Optional[str] = Field(None, description="地理位置")
+    report: Optional[str] = Field(None, description="LLM 生成的诊断报告（Markdown 格式）")
+    report_error: Optional[str] = Field(None, description="报告生成错误信息（仅在失败时）")
 
 
 class TaskStatus(BaseModel):

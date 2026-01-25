@@ -100,7 +100,7 @@ curl -X POST "http://localhost:8000/api/v1/diagnose" \
 curl -X GET "http://localhost:8000/api/v1/diagnose/tasks/a1b2c3d4-5678-90ab-cdef-123456789abc"
 ```
 
-**响应 - 成功**:
+**响应 - 成功（带 LLM 报告）**:
 ```json
 {
   "task_id": "a1b2c3d4-5678-90ab-cdef-123456789abc",
@@ -117,11 +117,18 @@ curl -X GET "http://localhost:8000/api/v1/diagnose/tasks/a1b2c3d4-5678-90ab-cdef
     "description": "叶片表面出现白色粉状物",
     "risk_level": "high",
     "crop_type": "番茄",
-    "location": "大棚A区"
+    "location": "大棚A区",
+    "report": "# 番茄白粉病诊断报告\n\n## 病害描述\n番茄白粉病由真菌 Sphaerotheca fuliginea 引起...\n\n## 防治措施\n### 化学防治\n推荐药剂：\n1. **25% 三唑酮可湿性粉剂**\n   - 用量：50-75 g/亩\n   - 稀释 1500-2000 倍液喷雾\n   - 安全间隔期：7 天\n...",
+    "report_error": null
   },
   "error": null
 }
 ```
+
+**注意**:
+- 当 `action_policy == "RETRIEVE"` 时，系统会生成 LLM 报告
+- 当 `action_policy == "PASS"` 时（如健康样本），`report` 为 `null`
+- 如果报告生成失败，`report` 为 `null`，`report_error` 包含错误信息
 
 **响应 - 进行中**:
 ```json
@@ -304,17 +311,34 @@ async function diagnoseImage(file) {
 │  GET /tasks/{task_id}    │ → Redis → 返回状态和结果
 └──────────────────────────┘
 
-(异步执行)
-┌────────────────────────────────┐
-│  Celery Worker                 │
-│  ┌──────────────────────────┐  │
-│  │ analyze_image task       │  │
-│  │ 1. 下载图片              │  │
-│  │ 2. Mock CV 推理          │  │
-│  │ 3. 查询 TaxonomyService  │  │
-│  │ 4. 返回诊断结果          │  │
-│  └──────────────────────────┘  │
-└────────────────────────────────┘
+(异步执行 - 增强版)
+┌────────────────────────────────────────────────────────┐
+│  Celery Worker                                        │
+│  ┌──────────────────────────────────────────────────┐ │
+│  │ analyze_image task                               │ │
+│  │ 1. 下载图片                                      │ │
+│  │ 2. Mock CV 推理                                  │ │
+│  │ 3. 查询 TaxonomyService → action_policy          │ │
+│  │ 4. 如果 action_policy == "RETRIEVE":             │ │
+│  │    a. RAG 查询相关知识                           │ │
+│  │    b. LLM 生成诊断报告                           │ │
+│  │ 5. 返回诊断结果（含报告）                        │ │
+│  └──────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────┘
+
+RAG + LLM 流程 (当 action_policy == "RETRIEVE"):
+┌─────────────────────────────────────────────────────┐
+│ 5a. RAG 查询                                         │
+│     query: "{crop_type} {diagnosis_name}"           │
+│     ↓                                                │
+│     ChromaDB 向量检索 → 返回 top_k=3 相关文档        │
+│ 5b. LLM 报告生成                                     │
+│     prompt = 模板 + 诊断信息 + RAG 上下文            │
+│     ↓                                                │
+│     GPT-4o-mini → 生成 Markdown 报告                 │
+│     ↓                                                │
+│     result["report"] = "..."                        │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## 依赖服务
@@ -328,10 +352,14 @@ docker-compose up -d redis
 # 2. MinIO (对象存储)
 docker-compose up -d minio
 
-# 3. Celery Worker (异步任务处理)
+# 3. ChromaDB (向量数据库 - RAG 功能)
+# 首次运行需要初始化知识库：
+uv run python scripts/ingest_knowledge.py --path data/knowledge/
+
+# 4. Celery Worker (异步任务处理)
 celery -A app.worker.celery_app worker --loglevel=info
 
-# 4. FastAPI (HTTP API)
+# 5. FastAPI (HTTP API)
 uv run uvicorn app.api.main:app --reload
 ```
 
@@ -361,4 +389,50 @@ uv run uvicorn app.api.main:app --reload
 
 - [TaxonomyService 使用指南](./taxonomy_usage.md)
 - [StorageService 使用指南](./storage_usage.md)
+- [知识库 RAG 指南](./knowledge_rag.md) - RAG 系统管理
+- [报告生成指南](./report_generation.md) - LLM 报告生成
 - [API 文档](http://localhost:8000/docs) - Swagger UI
+
+## RAG + LLM 功能说明
+
+### 报告生成条件
+
+系统根据 `action_policy` 决定是否生成 LLM 报告：
+
+| action_policy | 说明 | 是否生成报告 | 示例 |
+|---------------|------|-------------|------|
+| `PASS` | 健康样本 | ❌ 否 | 植株健康、无病虫害 |
+| `RETRIEVE` | 需要知识检索 | ✅ 是 | 病害、害虫 |
+| `HUMAN_REVIEW` | 需要人工审核 | ❌ 否 | 未知病害 |
+
+### 报告内容
+
+生成的报告包含以下章节：
+
+1. **病害描述**: 病原、症状、发病条件
+2. **防治措施**:
+   - 农业防治
+   - 生物防治
+   - 化学防治（含药剂、用量、稀释倍数、安全间隔期）
+3. **预防措施**: 栽培管理建议、注意事项
+
+### 置信度警告
+
+- **置信度 < 50%**: 显示强烈警告，建议咨询专家
+- **置信度 < 70%**: 显示提示，建议重新拍照
+- **置信度 ≥ 70%**: 不显示警告
+
+### 容错机制
+
+即使报告生成失败，诊断任务仍会返回结果：
+
+```json
+{
+  "diagnosis_name": "番茄晚疫病",
+  "confidence": 0.92,
+  "report": null,
+  "report_error": "RAG service not initialized: ChromaDB not initialized"
+}
+```
+
+这确保了系统的可用性，用户仍可获得基本信息。
