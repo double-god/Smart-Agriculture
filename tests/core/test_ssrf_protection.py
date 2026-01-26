@@ -11,6 +11,7 @@ import requests
 
 from app.core.ssrf_protection import (
     ALLOWED_IMAGE_TYPES,
+    ImageDownloadError,
     SSRFValidationError,
     download_image_securely,
     validate_image_url,
@@ -289,8 +290,6 @@ class TestDownloadImageSecurely:
     @patch("app.core.ssrf_protection.validate_image_url")
     def test_download_blocks_non_image_content_type(self, mock_validate, mock_get_session):
         """测试阻止非图片 Content-Type."""
-        from app.core.ssrf_protection import ImageDownloadError
-
         mock_validate.return_value = ("93.184.216.34", "example.com")
         mock_response = Mock()
         mock_response.status_code = 200
@@ -314,8 +313,6 @@ class TestDownloadImageSecurely:
     @patch("app.core.ssrf_protection.validate_image_url")
     def test_download_enforces_size_limit_content_length(self, mock_validate, mock_get_session):
         """测试通过 Content-Length header 强制执行大小限制."""
-        from app.core.ssrf_protection import ImageDownloadError
-
         mock_validate.return_value = ("93.184.216.34", "example.com")
         mock_response = Mock()
         mock_response.status_code = 200
@@ -338,8 +335,6 @@ class TestDownloadImageSecurely:
     @patch("app.core.ssrf_protection.validate_image_url")
     def test_download_enforces_size_limit_during_stream(self, mock_validate, mock_get_session):
         """测试在流式下载期间强制执行大小限制（无 Content-Length）."""
-        from app.core.ssrf_protection import ImageDownloadError
-
         mock_validate.return_value = ("93.184.216.34", "example.com")
 
         # 模拟超过大小限制的流式响应
@@ -371,8 +366,6 @@ class TestDownloadImageSecurely:
     @patch("app.core.ssrf_protection.validate_image_url")
     def test_download_http_error(self, mock_validate, mock_get_session):
         """测试 HTTP 错误处理."""
-        from app.core.ssrf_protection import ImageDownloadError
-
         mock_validate.return_value = ("93.184.216.34", "example.com")
         mock_response = Mock()
         mock_response.status_code = 404
@@ -397,8 +390,6 @@ class TestDownloadImageSecurely:
     @patch("app.core.ssrf_protection.validate_image_url")
     def test_download_timeout(self, mock_validate, mock_get_session):
         """测试下载超时."""
-        from app.core.ssrf_protection import ImageDownloadError
-
         mock_validate.return_value = ("93.184.216.34", "example.com")
 
         # Mock Session with timeout
@@ -415,8 +406,6 @@ class TestDownloadImageSecurely:
     @patch("app.core.ssrf_protection.validate_image_url")
     def test_download_network_error(self, mock_validate, mock_get_session):
         """测试网络错误."""
-        from app.core.ssrf_protection import ImageDownloadError
-
         mock_validate.return_value = ("93.184.216.34", "example.com")
 
         # Mock Session with connection error
@@ -433,8 +422,6 @@ class TestDownloadImageSecurely:
     @patch("app.core.ssrf_protection.validate_image_url")
     def test_download_propagates_ssrf_validation_error(self, mock_validate, mock_get_session):
         """测试将 SSRFValidationError 转换为 ImageDownloadError."""
-        from app.core.ssrf_protection import ImageDownloadError
-
         mock_validate.side_effect = SSRFValidationError("禁止访问内网地址")
 
         with pytest.raises(ImageDownloadError) as exc_info:

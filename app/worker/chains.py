@@ -5,10 +5,10 @@ This module contains Chain implementations for generating plant disease
 and pest reports using dynamic template switching based on CV results.
 """
 
-from typing import Any, Dict, List, Optional
-
 import logging
 import os
+
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from langchain_core.documents import Document
@@ -17,9 +17,9 @@ from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_openai import ChatOpenAI
 
 from app.core.templates import (
-    get_report_template,
     TEMPLATE_TYPE_DISEASE,
     TEMPLATE_TYPE_PEST,
+    get_report_template,
 )
 
 # Load environment variables

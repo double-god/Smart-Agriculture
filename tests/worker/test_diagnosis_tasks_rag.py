@@ -4,22 +4,20 @@ RAG + LLM 报告生成集成测试
 Tests for RAG and LLM integration in diagnosis tasks.
 """
 
-import pytest
 from unittest.mock import Mock, patch
-from app.worker.diagnosis_tasks import analyze_image
+
 from langchain_core.documents import Document
+
 from app.services.rag_service import RAGServiceNotInitializedError
-from app.worker.chains import ReportTimeoutError, LLMError
+from app.worker.chains import LLMError, ReportTimeoutError
+from app.worker.diagnosis_tasks import analyze_image
 
 
 def test_analyze_image_with_report():
     """测试成功生成报告（action_policy == RETRIEVE）"""
-    with patch('app.worker.diagnosis_tasks.requests.get') as mock_get:
-        # Mock HTTP 响应
-        mock_response = Mock()
-        mock_response.content = b"fake image data"
-        mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
+        # Mock 图片下载
+        mock_download.return_value = b"fake image data"
 
         with patch('app.worker.diagnosis_tasks.get_taxonomy_service') as mock_get_taxonomy:
             # Mock TaxonomyService - 返回 RETRIEVE 策略
@@ -85,12 +83,9 @@ def test_analyze_image_with_report():
 
 def test_analyze_image_skip_report_healthy():
     """测试健康样本不生成报告（action_policy == PASS）"""
-    with patch('app.worker.diagnosis_tasks.requests.get') as mock_get:
-        # Mock HTTP 响应
-        mock_response = Mock()
-        mock_response.content = b"fake image data"
-        mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
+        # Mock 图片下载
+        mock_download.return_value = b"fake image data"
 
         with patch('app.worker.diagnosis_tasks.get_taxonomy_service') as mock_get_taxonomy:
             # Mock TaxonomyService - 返回 PASS 策略（健康）
@@ -126,12 +121,9 @@ def test_analyze_image_skip_report_healthy():
 
 def test_analyze_image_rag_failure():
     """测试 RAG 服务失败处理"""
-    with patch('app.worker.diagnosis_tasks.requests.get') as mock_get:
-        # Mock HTTP 响应
-        mock_response = Mock()
-        mock_response.content = b"fake image data"
-        mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
+        # Mock 图片下载
+        mock_download.return_value = b"fake image data"
 
         with patch('app.worker.diagnosis_tasks.get_taxonomy_service') as mock_get_taxonomy:
             # Mock TaxonomyService - 返回 RETRIEVE 策略
@@ -150,7 +142,9 @@ def test_analyze_image_rag_failure():
             with patch('app.worker.diagnosis_tasks.get_rag_service') as mock_get_rag:
                 # Mock RAG 服务抛出异常
                 mock_rag = Mock()
-                mock_rag.query.side_effect = RAGServiceNotInitializedError("ChromaDB not initialized")
+                mock_rag.query.side_effect = (
+                    RAGServiceNotInitializedError("ChromaDB not initialized")
+                )
                 mock_get_rag.return_value = mock_rag
 
                 # 执行任务
@@ -171,12 +165,9 @@ def test_analyze_image_rag_failure():
 
 def test_analyze_image_llm_timeout():
     """测试 LLM 超时处理"""
-    with patch('app.worker.diagnosis_tasks.requests.get') as mock_get:
-        # Mock HTTP 响应
-        mock_response = Mock()
-        mock_response.content = b"fake image data"
-        mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
+        # Mock 图片下载
+        mock_download.return_value = b"fake image data"
 
         with patch('app.worker.diagnosis_tasks.get_taxonomy_service') as mock_get_taxonomy:
             # Mock TaxonomyService - 返回 RETRIEVE 策略
@@ -214,7 +205,10 @@ def test_analyze_image_llm_timeout():
                     # 验证报告为空，但有错误信息
                     assert result["report"] is None
                     assert result["report_error"] is not None
-                    assert "LLM call timed out" in result["report_error"] or "timed out" in result["report_error"].lower()
+                    assert (
+                        "LLM call timed out" in result["report_error"]
+                        or "timed out" in result["report_error"].lower()
+                    )
 
                     # 验证任务未失败（其他结果仍然有效）
                     assert result["diagnosis_name"] == "番茄晚疫病"
@@ -223,12 +217,9 @@ def test_analyze_image_llm_timeout():
 
 def test_analyze_image_llm_api_error():
     """测试 LLM API 错误处理"""
-    with patch('app.worker.diagnosis_tasks.requests.get') as mock_get:
-        # Mock HTTP 响应
-        mock_response = Mock()
-        mock_response.content = b"fake image data"
-        mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
+        # Mock 图片下载
+        mock_download.return_value = b"fake image data"
 
         with patch('app.worker.diagnosis_tasks.get_taxonomy_service') as mock_get_taxonomy:
             # Mock TaxonomyService - 返回 RETRIEVE 策略

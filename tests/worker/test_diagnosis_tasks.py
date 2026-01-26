@@ -4,7 +4,7 @@ Worker diagnosis tasks unit tests with edge cases.
 Tests cover normal operations and extreme conditions.
 """
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 from langchain_core.documents import Document

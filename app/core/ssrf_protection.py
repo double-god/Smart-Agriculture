@@ -255,7 +255,11 @@ def validate_image_url(url: str) -> Tuple[str, str]:
         raise SSRFValidationError(f"禁止访问 localhost/回环地址: {hostname}")
 
     # 5. 禁止私有地址字符串模式（在 DNS 解析前快速拒绝）
-    if hostname_lower.startswith("127.") or hostname_lower.startswith("192.168.") or hostname_lower.startswith("10."):
+    if (
+        hostname_lower.startswith("127.")
+        or hostname_lower.startswith("192.168.")
+        or hostname_lower.startswith("10.")
+    ):
         raise SSRFValidationError(f"禁止访问私有地址: {hostname}")
 
     # 6. DNS 解析，获取所有 IP 地址
@@ -263,9 +267,23 @@ def validate_image_url(url: str) -> Tuple[str, str]:
         # 设置 DNS 超时，防止 DNS 慢速攻击
         socket.setdefaulttimeout(5)
         addr_info = socket.getaddrinfo(hostname, None)
-        # 提取所有 IP 地址（去重，保持 getaddrinfo 返回的顺序）
-        # 使用 dict.fromkeys() 而非 set()，保留 IP 优先级顺序（最近的 CDN 节点）
-        ips = list(dict.fromkeys(addr[4][0] for addr in addr_info))
+
+        # 安全提取 IP 地址，处理不规范 DNS 响应
+        # addr 结构：(family, type, proto, canonname, sockaddr)
+        # sockaddr 对于 IPv4 是 (address, port)，对于 IPv6 是 (address, port, flow_info, scope_id)
+        ips = []
+        for addr in addr_info:
+            try:
+                if len(addr) >= 5 and addr[4] and len(addr[4]) >= 1:
+                    ip = addr[4][0]
+                    if ip and ip not in ips:
+                        ips.append(ip)
+                else:
+                    logger.warning(f"DNS 返回不规范的结果: {addr}")
+            except (IndexError, TypeError) as e:
+                logger.warning(f"解析 DNS 结果时出错: {addr} - {e}")
+                continue
+
     except socket.timeout as e:
         # socket.timeout 是 OSError 的子类，必须先捕获
         raise SSRFValidationError(f"DNS 查询超时: {hostname}") from e
@@ -376,7 +394,8 @@ def download_image_securely(
     # 2. 重建 URL（使用 IP 地址而非域名）
     # 这样可以防止 DNS Rebinding 攻击，因为我们使用的是已验证的 IP 地址
     parsed = urlparse(url)
-    target_url = parsed._replace(netloc=f"{ip_address}:{parsed.port or (443 if parsed.scheme == 'https' else 80)}").geturl()
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    target_url = parsed._replace(netloc=f"{ip_address}:{port}").geturl()
 
     # 3. 准备请求头（保留原始 Host，支持虚拟主机）
     headers = {

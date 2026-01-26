@@ -17,11 +17,12 @@ End-to-End RAG Integration Tests
     uv run pytest tests/integration/test_rag_e2e.py -v -s
 """
 
+import os
+import time
+
 from pathlib import Path
 
-import os
 import pytest
-import time
 
 from app.services.rag_service import get_rag_service, reset_rag_service
 from app.services.taxonomy_service import get_taxonomy_service
