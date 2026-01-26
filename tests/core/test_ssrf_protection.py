@@ -4,7 +4,7 @@ Unit tests for SSRF Protection module.
 Tests URL validation, DNS Rebinding protection, and secure image download.
 """
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
@@ -168,7 +168,7 @@ class TestValidateImageUrl:
                 (2, 1, 6, "", ("192.0.2.1", 0))  # TEST-NET-1 (RFC 5737)
             ]
 
-            with pytest.raises(SSRFValidationError) as exc_info:
+            with pytest.raises(SSRFValidationError):
                 validate_image_url("http://reserved.local/image.jpg")
 
             # Python ipaddress 可能不标记所有保留地址，所以检查是否被阻止
@@ -587,7 +587,7 @@ class TestHTTPSessionManagement:
 
     def test_session_singleton(self):
         """测试 Session 单例模式."""
-        from app.core.ssrf_protection import close_http_session, _get_http_session
+        from app.core.ssrf_protection import _get_http_session, close_http_session
 
         close_http_session()  # 重置
 
@@ -601,7 +601,7 @@ class TestHTTPSessionManagement:
 
     def test_session_initialization(self):
         """测试 Session 正确初始化."""
-        from app.core.ssrf_protection import close_http_session, _get_http_session
+        from app.core.ssrf_protection import _get_http_session, close_http_session
 
         close_http_session()
         session = _get_http_session()
@@ -623,7 +623,7 @@ class TestHTTPSessionManagement:
 
     def test_session_close(self):
         """测试 Session 关闭功能."""
-        from app.core.ssrf_protection import close_http_session, _get_http_session
+        from app.core.ssrf_protection import _get_http_session, close_http_session
 
         close_http_session()
         session = _get_http_session()

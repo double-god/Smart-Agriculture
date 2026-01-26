@@ -61,19 +61,44 @@ def test_analyze_image_success_download():
             mock_taxonomy.get_by_model_label.return_value = mock_entry
             mock_get_taxonomy.return_value = mock_taxonomy
 
-            # 执行任务
-            result = call_analyze_image(create_mock_task(), "http://example.com/test.jpg")
+            with patch('app.worker.diagnosis_tasks.get_rag_service') as mock_get_rag:
+                # Mock RAG 服务
+                mock_rag = Mock()
+                mock_docs = [Document(page_content="测试文档", metadata={"source": "test.md"})]
+                mock_rag.query_async = AsyncMock(return_value=mock_docs)
+                mock_get_rag.return_value = mock_rag
 
-            # 验证结果
-            valid_labels = ["healthy", "powdery_mildew", "aphid_complex",
-                           "spider_mite", "late_blight"]
-            assert result["model_label"] in valid_labels
-            assert 0.0 <= result["confidence"] <= 1.0
-            assert result["diagnosis_name"] == "白粉病"
-            assert result["category"] == "Disease"
-            assert result["action_policy"] == "RETRIEVE"
-            assert result["taxonomy_id"] == 2
-            assert result["inference_time_ms"] >= 0
+                mock_report_async = AsyncMock(return_value="# 测试报告")
+                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report_async',
+                          new=mock_report_async):
+                    # 执行任务
+                    result = call_analyze_image(create_mock_task(), "http://example.com/test.jpg")
+
+                    # 验证结果
+                    valid_labels = ["healthy", "powdery_mildew", "aphid_complex",
+                                   "spider_mite", "late_blight"]
+                    assert result["model_label"] in valid_labels
+                    assert 0.0 <= result["confidence"] <= 1.0
+                    assert result["diagnosis_name"] == "白粉病"
+                    assert result["category"] == "Disease"
+                    assert result["action_policy"] == "RETRIEVE"
+                    assert result["taxonomy_id"] == 2
+                    assert result["inference_time_ms"] >= 0
+
+                    # 验证 timings 字段存在
+                    assert "timings" in result
+                    assert "image_download_ms" in result["timings"]
+                    assert "inference_ms" in result["timings"]
+                    assert "rag_query_ms" in result["timings"]
+                    assert "llm_report_ms" in result["timings"]
+                    assert "total_ms" in result["timings"]
+
+                    # 验证计时值（由于 action_policy=RETRIEVE，RAG 和 LLM 应该有值）
+                    assert result["timings"]["image_download_ms"] >= 0
+                    assert result["timings"]["inference_ms"] >= 0
+                    assert result["timings"]["rag_query_ms"] >= 0
+                    assert result["timings"]["llm_report_ms"] >= 0
+                    assert result["timings"]["total_ms"] >= 0
 
 
 def test_analyze_image_download_timeout():
@@ -130,6 +155,10 @@ def test_analyze_image_taxonomy_not_found():
             assert result["category"] == "Unknown"
             assert result["action_policy"] == "HUMAN_REVIEW"
             assert result["taxonomy_id"] is None
+
+            # 验证 timings 字段存在
+            assert "timings" in result
+            assert result["timings"]["total_ms"] >= 0
 
 
 def test_analyze_image_with_optional_params():
@@ -382,6 +411,12 @@ def test_analyze_image_with_report():
                     assert result["report"] is not None
                     assert result["report"] == mock_report
                     assert result["report_error"] is None
+
+                    # 验证 timings 字段包含 RAG 和 LLM 计时
+                    assert "timings" in result
+                    assert result["timings"]["rag_query_ms"] >= 0
+                    assert result["timings"]["llm_report_ms"] >= 0
+                    assert result["timings"]["total_ms"] >= 0
 
                     # 验证 RAG 和 LLM 被调用
                     mock_rag.query_async.assert_called_once()

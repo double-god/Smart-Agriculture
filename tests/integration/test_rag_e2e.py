@@ -17,14 +17,15 @@ End-to-End RAG Integration Tests
     uv run pytest tests/integration/test_rag_e2e.py -v -s
 """
 
-import os
-import time
-import pytest
 from pathlib import Path
 
-from app.worker.diagnosis_tasks import analyze_image
+import os
+import pytest
+import time
+
 from app.services.rag_service import get_rag_service, reset_rag_service
 from app.services.taxonomy_service import get_taxonomy_service
+from app.worker.diagnosis_tasks import analyze_image
 
 
 @pytest.fixture(scope="module")
@@ -40,7 +41,10 @@ def verify_environment():
     # 检查 ChromaDB 是否已初始化
     chroma_path = os.getenv("CHROMA_PERSIST_DIRECTORY", "data/chroma")
     if not os.path.exists(chroma_path):
-        pytest.skip(f"ChromaDB not initialized at {chroma_path}. Run: uv run python scripts/ingest_knowledge.py --path data/knowledge/")
+        pytest.skip(
+            f"ChromaDB not initialized at {chroma_path}. "
+            "Run: uv run python scripts/ingest_knowledge.py --path data/knowledge/"
+        )
 
     # 检查知识文件是否存在
     knowledge_dir = Path("data/knowledge")
@@ -63,7 +67,10 @@ def test_image_url(verify_environment):
     """
     # 使用一个公开的番茄病害图片示例
     # 注意：这只是一个示例 URL，实际测试时应该使用真实上传的图片
-    return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Phytophthora_infestans Tomato.jpg/640px-Phytophthora_infestans_Tomato.jpg"
+    return (
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/"
+        "Phytophthora_infestans_Tomato.jpg/640px-Phytophthora_infestans_Tomato.jpg"
+    )
 
 
 @pytest.mark.integration
@@ -106,7 +113,7 @@ class TestEndToEndRAGDiagnosis:
 
         此测试会消耗 OpenAI API 配额。
         """
-        print(f"\n🔍 Starting end-to-end diagnosis test...")
+        print("\n🔍 Starting end-to-end diagnosis test...")
         print(f"   Image URL: {test_image_url}")
 
         # 提交诊断任务
@@ -135,7 +142,7 @@ class TestEndToEndRAGDiagnosis:
         except Exception as e:
             pytest.fail(f"Task failed with exception: {str(e)}")
 
-        print(f"\n✅ Task completed successfully")
+        print("\n✅ Task completed successfully")
         print(f"   Model label: {result.get('model_label')}")
         print(f"   Diagnosis: {result.get('diagnosis_name')}")
         print(f"   Confidence: {result.get('confidence'):.2%}")
@@ -149,10 +156,14 @@ class TestEndToEndRAGDiagnosis:
 
         # 如果是 RETRIEVE 策略，应该有报告
         if result.get("action_policy") == "RETRIEVE":
-            print(f"\n📊 LLM Report:")
+            print("\n📊 LLM Report:")
             if result.get("report"):
                 # 打印报告的前 200 个字符
-                report_preview = result["report"][:200] + "..." if len(result["report"]) > 200 else result["report"]
+                report_preview = (
+                    result["report"][:200] + "..."
+                    if len(result["report"]) > 200
+                    else result["report"]
+                )
                 print(f"   {report_preview}")
 
                 # 验证报告包含预期的章节
@@ -161,13 +172,13 @@ class TestEndToEndRAGDiagnosis:
                 assert any(keyword in report_lower for keyword in ["病害", "防治", "预防", "番茄"])
                 print(f"   ✅ Report generated successfully ({len(result['report'])} chars)")
             else:
-                print(f"   ⚠️  No report generated")
+                print("   ⚠️  No report generated")
                 print(f"   Error: {result.get('report_error', 'Unknown error')}")
 
                 # 报告生成失败不应该导致任务失败
                 assert "report_error" in result
 
-        print(f"\n✅ End-to-end test passed!")
+        print("\n✅ End-to-end test passed!")
 
     @pytest.mark.skipif(
         os.getenv("CI") == "true",
@@ -184,7 +195,7 @@ class TestEndToEndRAGDiagnosis:
             ("番茄蚜虫", "蚜虫"),
         ]
 
-        print(f"\n🔍 Testing RAG retrieval quality...")
+        print("\n🔍 Testing RAG retrieval quality...")
 
         for query, expected_keyword in test_queries:
             docs = rag.query(query, top_k=3)
@@ -194,13 +205,13 @@ class TestEndToEndRAGDiagnosis:
             if len(docs) > 0:
                 found = any(expected_keyword in doc.page_content for doc in docs)
                 if found:
-                    print(f"      ✅ Found relevant document")
+                    print("      ✅ Found relevant document")
                 else:
                     print(f"      ⚠️  Expected keyword '{expected_keyword}' not found in results")
             else:
-                print(f"      ⚠️  No documents retrieved (knowledge base may be empty)")
+                print("      ⚠️  No documents retrieved (knowledge base may be empty)")
 
-        print(f"✅ RAG retrieval quality test completed")
+        print("✅ RAG retrieval quality test completed")
 
 
 @pytest.mark.integration
@@ -218,7 +229,7 @@ class TestKnowledgeBaseIngestion:
             "crops/tomato.md",
         ]
 
-        print(f"\n📁 Checking knowledge files...")
+        print("\n📁 Checking knowledge files...")
 
         for file_path in example_files:
             full_path = knowledge_dir / file_path
@@ -227,13 +238,13 @@ class TestKnowledgeBaseIngestion:
             else:
                 print(f"   ⚠️  {file_path} not found")
 
-        print(f"✅ Knowledge files check completed")
+        print("✅ Knowledge files check completed")
 
     def test_chroma_db_persistence(self, verify_environment):
         """测试 ChromaDB 持久化"""
         chroma_path = os.getenv("CHROMA_PERSIST_DIRECTORY", "data/chroma")
 
-        print(f"\n💾 Checking ChromaDB persistence...")
+        print("\n💾 Checking ChromaDB persistence...")
         print(f"   Path: {chroma_path}")
 
         if os.path.exists(chroma_path):
@@ -248,9 +259,9 @@ class TestKnowledgeBaseIngestion:
             if len(chroma_files) > 5:
                 print(f"      ... and {len(chroma_files) - 5} more files")
         else:
-            print(f"   ⚠️  ChromaDB directory not found")
+            print("   ⚠️  ChromaDB directory not found")
 
-        print(f"✅ ChromaDB persistence check completed")
+        print("✅ ChromaDB persistence check completed")
 
 
 if __name__ == "__main__":

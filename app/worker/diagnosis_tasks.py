@@ -8,6 +8,7 @@ import asyncio
 import logging
 import random
 import time
+from contextlib import contextmanager
 from typing import Optional
 
 from app.core.ssrf_protection import (
@@ -21,11 +22,34 @@ from app.worker.celery_app import celery_app
 from app.worker.chains import (
     LLMError,
     ReportTimeoutError,
-    generate_diagnosis_report,
     generate_diagnosis_report_async,
 )
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _timer(task_id: str, operation_name: str):
+    """
+    计时上下文管理器。
+
+    Args:
+        task_id: Celery 任务 ID
+        operation_name: 操作名称（如 "image_download"）
+
+    Yields:
+        None
+
+    Example:
+        >>> with _timer(task_id, "image_download"):
+        ...     image_data = download_image_securely_async(url)
+    """
+    start = time.time()
+    try:
+        yield
+    finally:
+        elapsed_ms = int((time.time() - start) * 1000)
+        logger.info(f"[Task {task_id}] {operation_name} completed in {elapsed_ms}ms")
 
 
 @celery_app.task(name="app.worker.diagnosis_tasks.analyze_image", bind=True)
@@ -58,21 +82,26 @@ def analyze_image(
             "taxonomy_id": 2
         }
     """
-    logger.info(f"[Task {self.request.id}] Starting diagnosis for image: {image_url}")
+    task_id = self.request.id
+    total_start = time.time()
+
+    logger.info(f"[Task {task_id}] Starting diagnosis for image: {image_url}")
 
     try:
         # 1. 安全下载图片（异步 HTTP，包含 SSRF 防护和 DNS Rebinding 防护）
-        logger.info(f"[Task {self.request.id}] Downloading image from: {image_url}")
+        logger.info(f"[Task {task_id}] Downloading image from: {image_url}")
+        download_start = time.time()
         try:
             image_data = asyncio.run(
                 download_image_securely_async(
                     image_url, max_size=10 * 1024 * 1024, timeout=30
                 )
             )
+            download_time_ms = int((time.time() - download_start) * 1000)
             image_size = len(image_data)
             logger.info(
-                f"[Task {self.request.id}] Image downloaded successfully, "
-                f"size: {image_size} bytes"
+                f"[Task {task_id}] Image downloaded successfully, "
+                f"size: {image_size} bytes (took {download_time_ms}ms)"
             )
         except SSRFValidationError as e:
             # URL 验证失败（内网地址、不支持的协议等）
@@ -82,7 +111,7 @@ def analyze_image(
             raise RuntimeError(f"图片下载失败: {str(e)}") from e
 
         # 2. 模拟 CV 模型推理（Mock 数据）
-        logger.info(f"[Task {self.request.id}] Running CV model inference...")
+        logger.info(f"[Task {task_id}] Running CV model inference...")
         start_time = time.time()
 
         # Mock: 随机选择一个分类结果
@@ -113,7 +142,7 @@ def analyze_image(
         inference_time = int((time.time() - start_time) * 1000)
 
         logger.info(
-            f"[Task {self.request.id}] Mock inference result: "
+            f"[Task {task_id}] Mock inference result: "
             f"{mock_result['model_label']} (confidence: {mock_result['confidence']})"
         )
 
@@ -125,7 +154,7 @@ def analyze_image(
             )
         except Exception as e:
             logger.warning(
-                f"[Task {self.request.id}] Taxonomy entry not found for "
+                f"[Task {task_id}] Taxonomy entry not found for "
                 f"{mock_result['model_label']}: {e}"
             )
             taxonomy_entry = None
@@ -135,6 +164,12 @@ def analyze_image(
             "model_label": mock_result["model_label"],
             "confidence": mock_result["confidence"],
             "inference_time_ms": inference_time,
+            "timings": {
+                "image_download_ms": download_time_ms,
+                "inference_ms": inference_time,
+                "rag_query_ms": None,
+                "llm_report_ms": None,
+            },
         }
 
         if taxonomy_entry:
@@ -165,21 +200,27 @@ def analyze_image(
         # 6. 生成 LLM 报告（如果需要）
         if taxonomy_entry and taxonomy_entry.action_policy == "RETRIEVE":
             logger.info(
-                f"[Task {self.request.id}] Generating report for "
+                f"[Task {task_id}] Generating report for "
                 f"{result['diagnosis_name']}..."
             )
             try:
                 # 查询 RAG 服务获取相关知识（异步版本）
                 rag = get_rag_service()
                 query_text = f"{result.get('crop_type', '作物')} {result['diagnosis_name']}"
+
+                # RAG 查询计时
+                rag_start = time.time()
                 contexts = asyncio.run(rag.query_async(query_text, top_k=3))
+                rag_time = int((time.time() - rag_start) * 1000)
+                result["timings"]["rag_query_ms"] = rag_time
 
                 logger.info(
-                    f"[Task {self.request.id}] Retrieved {len(contexts)} "
-                    f"documents from RAG (async)"
+                    f"[Task {task_id}] Retrieved {len(contexts)} "
+                    f"documents from RAG in {rag_time}ms"
                 )
 
                 # 生成 LLM 报告 (使用异步版本提升并发性能)
+                llm_start = time.time()
                 report = asyncio.run(
                     generate_diagnosis_report_async(
                         diagnosis_name=result["diagnosis_name"],
@@ -189,27 +230,29 @@ def analyze_image(
                         timeout=30,
                     )
                 )
+                llm_time = int((time.time() - llm_start) * 1000)
+                result["timings"]["llm_report_ms"] = llm_time
 
                 result["report"] = report
                 result["report_error"] = None
                 logger.info(
-                    f"[Task {self.request.id}] Report generated successfully "
-                    f"({len(report)} chars)"
+                    f"[Task {task_id}] Report generated successfully "
+                    f"({len(report)} chars) in {llm_time}ms"
                 )
 
             except RAGServiceNotInitializedError as e:
-                logger.warning(f"[Task {self.request.id}] RAG service not initialized: {str(e)}")
+                logger.warning(f"[Task {task_id}] RAG service not initialized: {str(e)}")
                 result["report"] = None
                 result["report_error"] = f"RAG service not initialized: {str(e)}"
 
             except (ReportTimeoutError, LLMError) as e:
-                logger.error(f"[Task {self.request.id}] Report generation failed: {str(e)}")
+                logger.error(f"[Task {task_id}] Report generation failed: {str(e)}")
                 result["report"] = None
                 result["report_error"] = str(e)
 
             except Exception as e:
                 logger.error(
-                    f"[Task {self.request.id}] Unexpected error during "
+                    f"[Task {task_id}] Unexpected error during "
                     f"report generation: {str(e)}",
                     exc_info=True,
                 )
@@ -220,14 +263,22 @@ def analyze_image(
             result["report"] = None
             result["report_error"] = None
 
+        # 计算总耗时
+        total_time = int((time.time() - total_start) * 1000)
+        result["timings"]["total_ms"] = total_time
+
         logger.info(
-            f"[Task {self.request.id}] Diagnosis completed successfully: "
-            f"{result['diagnosis_name']}"
+            f"[Task {task_id}] Diagnosis completed: {result['diagnosis_name']} "
+            f"(total: {total_time}ms)"
         )
 
         return result
 
     except Exception as e:
-        logger.error(f"[Task {self.request.id}] Diagnosis failed: {str(e)}", exc_info=True)
+        total_time = int((time.time() - total_start) * 1000)
+        logger.error(
+            f"[Task {task_id}] Diagnosis failed after {total_time}ms: {str(e)}",
+            exc_info=True,
+        )
         # 重新抛出异常，Celery 会标记任务为 FAILURE
         raise
