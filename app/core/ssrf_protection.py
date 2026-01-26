@@ -263,8 +263,9 @@ def validate_image_url(url: str) -> Tuple[str, str]:
         # 设置 DNS 超时，防止 DNS 慢速攻击
         socket.setdefaulttimeout(5)
         addr_info = socket.getaddrinfo(hostname, None)
-        # 提取所有 IP 地址（去重）
-        ips = list(set([addr[4][0] for addr in addr_info]))
+        # 提取所有 IP 地址（去重，保持 getaddrinfo 返回的顺序）
+        # 使用 dict.fromkeys() 而非 set()，保留 IP 优先级顺序（最近的 CDN 节点）
+        ips = list(dict.fromkeys(addr[4][0] for addr in addr_info))
     except socket.timeout as e:
         # socket.timeout 是 OSError 的子类，必须先捕获
         raise SSRFValidationError(f"DNS 查询超时: {hostname}") from e

@@ -43,7 +43,7 @@ def call_analyze_image(task, image_url, **kwargs):
 
 def test_analyze_image_success_download():
     """测试成功下载图片并分析"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock 下载图片返回字节数据
         mock_download.return_value = b"fake image data"
 
@@ -65,11 +65,11 @@ def test_analyze_image_success_download():
                 # Mock RAG 服务
                 mock_rag = Mock()
                 mock_docs = [Document(page_content="测试文档", metadata={"source": "test.md"})]
-                mock_rag.query_async = AsyncMock(return_value=mock_docs)
+                mock_rag.query = Mock(return_value=mock_docs)
                 mock_get_rag.return_value = mock_rag
 
-                mock_report_async = AsyncMock(return_value="# 测试报告")
-                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report_async',
+                mock_report_async = Mock(return_value="# 测试报告")
+                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report',
                           new=mock_report_async):
                     # 执行任务
                     result = call_analyze_image(create_mock_task(), "http://example.com/test.jpg")
@@ -103,7 +103,7 @@ def test_analyze_image_success_download():
 
 def test_analyze_image_download_timeout():
     """极端条件：图片下载超时"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock 超时
         mock_download.side_effect = ImageDownloadError("下载超时")
 
@@ -114,7 +114,7 @@ def test_analyze_image_download_timeout():
 
 def test_analyze_image_download_failure_404():
     """极端条件：图片返回 404"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock 404 错误
         mock_download.side_effect = ImageDownloadError("HTTP 错误: 404")
 
@@ -125,7 +125,7 @@ def test_analyze_image_download_failure_404():
 
 def test_analyze_image_download_connection_error():
     """极端条件：网络连接错误"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock 连接错误
         mock_download.side_effect = ImageDownloadError("连接失败")
 
@@ -136,7 +136,7 @@ def test_analyze_image_download_connection_error():
 
 def test_analyze_image_taxonomy_not_found():
     """极端条件：Taxonomy 找不到对应分类"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -163,7 +163,7 @@ def test_analyze_image_taxonomy_not_found():
 
 def test_analyze_image_with_optional_params():
     """测试带可选参数的分析"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -185,11 +185,11 @@ def test_analyze_image_with_optional_params():
                 # Mock RAG 服务
                 mock_rag = Mock()
                 mock_docs = [Document(page_content="测试文档", metadata={"source": "test.md"})]
-                mock_rag.query_async = AsyncMock(return_value=mock_docs)
+                mock_rag.query = Mock(return_value=mock_docs)
                 mock_get_rag.return_value = mock_rag
 
-                mock_report_async = AsyncMock(return_value="# 测试报告")
-                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report_async',
+                mock_report_async = Mock(return_value="# 测试报告")
+                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report',
                           new=mock_report_async):
                     # 执行任务
                     result = call_analyze_image(
@@ -212,7 +212,7 @@ def test_analyze_image_empty_url():
 
 def test_analyze_image_malformed_url():
     """极端条件：格式错误的 URL"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock 连接错误
         mock_download.side_effect = ImageDownloadError("URL 格式错误")
 
@@ -225,7 +225,7 @@ def test_analyze_image_very_long_url():
     """极端条件：超长 URL"""
     long_url = "http://example.com/" + "a" * 10000 + "/test.jpg"
 
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -243,7 +243,7 @@ def test_analyze_image_url_with_special_chars():
     """极端条件：URL 包含特殊字符"""
     special_url = "http://example.com/test file.jpg?token=abc@#$&space=here"
 
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -255,7 +255,7 @@ def test_analyze_image_url_with_special_chars():
 
 def test_analyze_image_zero_byte_image():
     """极端条件：0 字节图片"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock 空响应
         mock_download.return_value = b"fake image data"
 
@@ -267,7 +267,7 @@ def test_analyze_image_zero_byte_image():
 
 def test_analyze_image_large_image():
     """极端条件：超大图片"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock 大响应（100MB）- 注意：实际上会触发 ImageDownloadError
         # 因为超过大小限制
         # 由于 SSRF 防护限制了大小为 10MB，这里应该抛出异常
@@ -283,7 +283,7 @@ def test_analyze_image_concurrent_downloads():
     """极端条件：并发下载"""
     import threading
 
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -312,7 +312,7 @@ def test_analyze_image_concurrent_downloads():
 
 def test_analyze_image_all_mock_results():
     """测试所有 Mock 结果的可能性"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -349,7 +349,7 @@ def test_analyze_image_all_mock_results():
 
 def test_analyze_image_with_report():
     """测试成功生成报告（action_policy == RETRIEVE）"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -380,7 +380,7 @@ def test_analyze_image_with_report():
                         metadata={"source": "data/knowledge/diseases/late_blight.md"}
                     ),
                 ]
-                mock_rag.query_async = AsyncMock(return_value=mock_docs)
+                mock_rag.query = Mock(return_value=mock_docs)
                 mock_get_rag.return_value = mock_rag
 
                 # Mock LLM 报告生成
@@ -396,8 +396,8 @@ def test_analyze_image_with_report():
 ## 预防措施
 加强通风，降低湿度...
 """
-                mock_gen = AsyncMock(return_value=mock_report)
-                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report_async',
+                mock_gen = Mock(return_value=mock_report)
+                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report',
                           new=mock_gen) as mock_generate:
 
                     # 执行任务
@@ -419,13 +419,13 @@ def test_analyze_image_with_report():
                     assert result["timings"]["total_ms"] >= 0
 
                     # 验证 RAG 和 LLM 被调用
-                    mock_rag.query_async.assert_called_once()
+                    mock_rag.query.assert_called_once()
                     mock_generate.assert_called_once()
 
 
 def test_analyze_image_skip_report_healthy():
     """测试健康样本不生成报告（action_policy == PASS/IGNORE）"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -456,12 +456,12 @@ def test_analyze_image_skip_report_healthy():
                 assert result["report_error"] is None
 
                 # 验证 RAG 和 LLM 未被调用
-                mock_rag.query_async.assert_not_called()
+                mock_rag.query.assert_not_called()
 
 
 def test_analyze_image_skip_report_human_review():
     """测试 HUMAN_REVIEW 策略不生成报告"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -492,12 +492,12 @@ def test_analyze_image_skip_report_human_review():
                 assert result["report_error"] is None
 
                 # 验证 RAG 未被调用
-                mock_rag.query_async.assert_not_called()
+                mock_rag.query.assert_not_called()
 
 
 def test_analyze_image_rag_failure():
     """测试 RAG 服务失败处理"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -518,7 +518,7 @@ def test_analyze_image_rag_failure():
             with patch('app.worker.diagnosis_tasks.get_rag_service') as mock_get_rag:
                 # Mock RAG 服务抛出异常
                 mock_rag = Mock()
-                mock_rag.query_async = AsyncMock(
+                mock_rag.query = Mock(
                     side_effect=RAGServiceNotInitializedError("ChromaDB not initialized")
                 )
                 mock_get_rag.return_value = mock_rag
@@ -542,7 +542,7 @@ def test_analyze_image_rag_failure():
 
 def test_analyze_image_llm_timeout():
     """测试 LLM 超时处理"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -566,13 +566,13 @@ def test_analyze_image_llm_timeout():
                 mock_docs = [
                     Document(page_content="测试文档", metadata={"source": "test.md"})
                 ]
-                mock_rag.query_async = AsyncMock(return_value=mock_docs)
+                mock_rag.query = Mock(return_value=mock_docs)
                 mock_get_rag.return_value = mock_rag
 
-                mock_llm_async = AsyncMock(
+                mock_llm_async = Mock(
                     side_effect=ReportTimeoutError("LLM call timed out")
                 )
-                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report_async',
+                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report',
                           new=mock_llm_async):
 
                     # 执行任务
@@ -596,7 +596,7 @@ def test_analyze_image_llm_timeout():
 
 def test_analyze_image_llm_api_error():
     """测试 LLM API 错误处理"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -620,13 +620,13 @@ def test_analyze_image_llm_api_error():
                 mock_docs = [
                     Document(page_content="测试文档", metadata={"source": "test.md"})
                 ]
-                mock_rag.query_async = AsyncMock(return_value=mock_docs)
+                mock_rag.query = Mock(return_value=mock_docs)
                 mock_get_rag.return_value = mock_rag
 
-                mock_llm_async = AsyncMock(
+                mock_llm_async = Mock(
                     side_effect=LLMError("OpenAI API rate limit exceeded")
                 )
-                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report_async',
+                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report',
                           new=mock_llm_async):
 
                     # 执行任务
@@ -648,7 +648,7 @@ def test_analyze_image_llm_api_error():
 
 def test_analyze_image_with_report_empty_contexts():
     """测试 RAG 返回空上下文时的处理"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -669,12 +669,12 @@ def test_analyze_image_with_report_empty_contexts():
             with patch('app.worker.diagnosis_tasks.get_rag_service') as mock_get_rag:
                 # Mock RAG 服务 - 返回空列表
                 mock_rag = Mock()
-                mock_rag.query_async = AsyncMock(return_value=[])
+                mock_rag.query = Mock(return_value=[])
                 mock_get_rag.return_value = mock_rag
 
                 mock_report = "# 番茄晚疫病诊断报告\n\n未找到相关资料..."
-                mock_llm_async = AsyncMock(return_value=mock_report)
-                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report_async',
+                mock_llm_async = Mock(return_value=mock_report)
+                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report',
                           new=mock_llm_async):
 
                     # 执行任务
@@ -696,7 +696,7 @@ def test_analyze_image_with_report_empty_contexts():
 
 def test_analyze_image_with_report_low_confidence():
     """测试低置信度时报告包含警告"""
-    with patch('app.worker.diagnosis_tasks.download_image_securely_async') as mock_download:
+    with patch('app.worker.diagnosis_tasks.download_image_securely') as mock_download:
         # Mock HTTP 响应
         mock_download.return_value = b"fake image data"
 
@@ -718,12 +718,12 @@ def test_analyze_image_with_report_low_confidence():
                 # Mock RAG 服务
                 mock_rag = Mock()
                 mock_docs = [Document(page_content="测试文档", metadata={"source": "test.md"})]
-                mock_rag.query_async = AsyncMock(return_value=mock_docs)
+                mock_rag.query = Mock(return_value=mock_docs)
                 mock_get_rag.return_value = mock_rag
 
                 mock_report = "# 番茄晚疫病诊断报告\n\n⚠️ 置信度较低..."
-                mock_llm_async = AsyncMock(return_value=mock_report)
-                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report_async',
+                mock_llm_async = Mock(return_value=mock_report)
+                with patch('app.worker.diagnosis_tasks.generate_diagnosis_report',
                           new=mock_llm_async) as mock_generate:
 
                     # 执行任务

@@ -4,7 +4,6 @@ Diagnosis tasks for Smart Agriculture system.
 This module contains Celery tasks for image analysis and diagnosis.
 """
 
-import asyncio
 import logging
 import random
 import time
@@ -14,7 +13,7 @@ from typing import Optional
 from app.core.ssrf_protection import (
     ImageDownloadError,
     SSRFValidationError,
-    download_image_securely_async,
+    download_image_securely,
 )
 from app.services.rag_service import RAGServiceNotInitializedError, get_rag_service
 from app.services.taxonomy_service import get_taxonomy_service
@@ -22,7 +21,7 @@ from app.worker.celery_app import celery_app
 from app.worker.chains import (
     LLMError,
     ReportTimeoutError,
-    generate_diagnosis_report_async,
+    generate_diagnosis_report,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,14 +87,12 @@ def analyze_image(
     logger.info(f"[Task {task_id}] Starting diagnosis for image: {image_url}")
 
     try:
-        # 1. 安全下载图片（异步 HTTP，包含 SSRF 防护和 DNS Rebinding 防护）
+        # 1. 安全下载图片（同步 HTTP，包含 SSRF 防护和 DNS Rebinding 防护）
         logger.info(f"[Task {task_id}] Downloading image from: {image_url}")
         download_start = time.time()
         try:
-            image_data = asyncio.run(
-                download_image_securely_async(
-                    image_url, max_size=10 * 1024 * 1024, timeout=30
-                )
+            image_data = download_image_securely(
+                image_url, max_size=10 * 1024 * 1024, timeout=30
             )
             download_time_ms = int((time.time() - download_start) * 1000)
             image_size = len(image_data)
@@ -204,13 +201,13 @@ def analyze_image(
                 f"{result['diagnosis_name']}..."
             )
             try:
-                # 查询 RAG 服务获取相关知识（异步版本）
+                # 查询 RAG 服务获取相关知识
                 rag = get_rag_service()
                 query_text = f"{result.get('crop_type', '作物')} {result['diagnosis_name']}"
 
                 # RAG 查询计时
                 rag_start = time.time()
-                contexts = asyncio.run(rag.query_async(query_text, top_k=3))
+                contexts = rag.query(query_text, top_k=3)
                 rag_time = int((time.time() - rag_start) * 1000)
                 result["timings"]["rag_query_ms"] = rag_time
 
@@ -219,16 +216,14 @@ def analyze_image(
                     f"documents from RAG in {rag_time}ms"
                 )
 
-                # 生成 LLM 报告 (使用异步版本提升并发性能)
+                # 生成 LLM 报告
                 llm_start = time.time()
-                report = asyncio.run(
-                    generate_diagnosis_report_async(
-                        diagnosis_name=result["diagnosis_name"],
-                        crop_type=result.get("crop_type", "未知"),
-                        confidence=result["confidence"],
-                        contexts=contexts,
-                        timeout=30,
-                    )
+                report = generate_diagnosis_report(
+                    diagnosis_name=result["diagnosis_name"],
+                    crop_type=result.get("crop_type", "未知"),
+                    confidence=result["confidence"],
+                    contexts=contexts,
+                    timeout=30,
                 )
                 llm_time = int((time.time() - llm_start) * 1000)
                 result["timings"]["llm_report_ms"] = llm_time
